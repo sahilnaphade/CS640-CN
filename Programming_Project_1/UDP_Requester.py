@@ -4,12 +4,12 @@ import time
 import datetime
 import math
 
-def send_request(Sender_IP,requester_port):
+def send_request(Sender_IP, requester_port, filename="split.txt"):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     seq_no = socket.htonl(0)
-    request_header = b'R' + struct.pack('II',seq_no,0)
+    request_header = b'R' + struct.pack('II', seq_no, 0)
 
-    sock.sendto(request_header + b"This is Request", (Sender_IP,requester_port))
+    sock.sendto(request_header + bytes(filename, 'utf-8'), (Sender_IP,requester_port))
     print("Request sent \n")
     sock.close()
 
@@ -27,9 +27,8 @@ def receive_data(UDP_IP,UDP_PORT):
         header = data[1:9]
         header = struct.unpack('II',header)
         sequence_number_network = header[0]
-        sequence_number = socket.ntohl(sequence_number_network)
-        #packet_length = struct.unpack('!I', data[5:9])[0]
         packet_length = header[1]
+        sequence_number = socket.ntohl(sequence_number_network)
         count = count + 1
 
         if start_time is None and packet_length > 0:
@@ -40,7 +39,7 @@ def receive_data(UDP_IP,UDP_PORT):
         print(f"Send Address:  {addr}")
         print(f"Seq No:   {sequence_number}")
         print(f"Length :  {packet_length}")
-        print(f"Payload are:  {data[9:(9+4)].decode('utf-8')}")
+        print(f"Payload is:  {data[9:].decode('utf-8')}")
         print("\n")
 
         if packet_type == 'E':
