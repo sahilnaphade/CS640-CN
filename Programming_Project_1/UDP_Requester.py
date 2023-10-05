@@ -36,7 +36,6 @@ def receive_data(UDP_IP,UDP_PORT, filename):
 
 		if start_time is None and packet_length > 0:
 			start_time = time.time()
-		print(type(data[9:]))
 		# payload = data[9:].decode('utf-8')
 		payload = str(data[9:])
 		print(f"Packet Type:  {packet_type}")
@@ -45,7 +44,6 @@ def receive_data(UDP_IP,UDP_PORT, filename):
 		print(f"Seq No:   {sequence_number}")
 		print(f"Length :  {packet_length}")
 		print(f"Payload is:  {payload}")
-		print(type(payload))
 		with open(filename, "a") as copied_file:
 			copied_file.write(payload)
 		print("\n")
