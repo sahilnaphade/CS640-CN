@@ -8,8 +8,8 @@ def receive_request(UDP_IP, UDP_PORT):
 	sock = socket.socket(socket.AF_INET, # Internet
 						socket.SOCK_DGRAM) # UDP
 
-
-	sock.bind((UDP_IP, UDP_PORT))
+	# print("Sender waiting on IP address {} @ port {}".format(UDP_IP, UDP_PORT))
+	sock.bind(('0.0.0.0', UDP_PORT))
 	# print("Waiting on IP {} at port {}".format(UDP_IP, UDP_PORT))
 
 	while True:
@@ -22,10 +22,10 @@ def receive_request(UDP_IP, UDP_PORT):
 		#packet_length = struct.unpack('!I', data[5:9])[0]
 		packet_length = header[1]
 
-		print("Packet type is : %s"% packet_type)
-		print("Sequence number is : %d" % sequence_number)
+		print("Packet type:     %s"% packet_type)
+		print("Sequence no.:    %d" % sequence_number)
 		filename = data[9:].decode('utf-8')
-		print("Payload is : %s "% filename)
+		print("Payload:         %s "% filename)
 		print("\n")
 
 		sock.close()
@@ -36,52 +36,52 @@ def create_header(packet_type, sequence_number, payload_length):
 	header = str(packet_type).encode("utf-8") + struct.pack('II', sequence_number_network, payload_length)
 	return header
 
-def send_packets(packet_type, client_address, requestor_wait_port, sequence_number, payload_length, rate, message):
+def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_number, payload_length, rate, message):
 	sock = socket.socket(socket.AF_INET, # Internet
 					  socket.SOCK_DGRAM) # UDP
-	sock.bind((client_address, 5000))
+	# sock.bind((requester_addr, 5000))
 	chunks = [message[i:i + payload_length] for i in range(0, len(message), payload_length)]
 
 	for j in chunks:
 		header = create_header(packet_type, sequence_number, len(j))
-		sock.sendto(header + str(j).encode("utf-8"), (client_address, requestor_wait_port))
+		sock.sendto((header + j.encode("utf-8")), (requester_addr, requestor_wait_port))
 		current_time = time.time()
 		milliseconds = int((current_time - int(current_time)) * 1000)
 
 		print("DATA Packet")
-		print(f"Send Time:   {time.strftime('%Y-%m-%d %H:%M:%S')}.{milliseconds:03d}")
-		print(f"Send Address:  {client_address}:{requestor_wait_port}")
-		print(f"Seq No:   {sequence_number}")
-		print(f"Length :  {len(j)}")
-		print(f"Payload are:  {j[:]}")
+		print(f"Send Time:          {time.strftime('%Y-%m-%d %H:%M:%S')}.{milliseconds:03d}")
+		print(f"Requester Addr:     {requester_addr}:{requestor_wait_port}")
+		print(f"Seq No:             {sequence_number}")
+		print(f"Length:             {len(j)}")
+		print(f"Payload:            {j[9:9+4]}")
 		print("\n")
 
 		sequence_number = sequence_number + len(j)
 		time.sleep(1/rate)
 
 	end_header = create_header('E', sequence_number, 0)
-	sock.sendto(end_header + str(0).encode("utf-8"),(client_address, requestor_wait_port))
+	sock.sendto(end_header + str(0).encode("utf-8"), (requester_addr, requestor_wait_port))
 
 	current_time = time.time()
 	milliseconds = int((current_time - int(current_time)) * 1000)
 	print("END Packet")
-	print(f"Send Time:   {time.strftime('%Y-%m-%d %H:%M:%S')}.{milliseconds:03d}")
-	print(f"Send Address:  {client_address}:{requestor_wait_port}")
-	print(f"Seq No:   {sequence_number}")
-	print(f"Length :  {0}")
-	print(f"Payload are:  {0}")
+	print(f"Send Time:          {time.strftime('%Y-%m-%d %H:%M:%S')}.{milliseconds:03d}")
+	print(f"Requester Addr:     {requester_addr}:{requestor_wait_port}")
+	print(f"Seq No:             {sequence_number}")
+	print(f"Length:             {0}")
+	print(f"Payload:            {0}")
 	print("\n")
 
 
 def main(sender_wait_port, requestor_port, packet_rate, start_seq_no, payload_length):
-	packet_type, filename, client_address = receive_request(socket.gethostname(), sender_wait_port)
+	packet_type, filename, client_address = receive_request(socket.gethostbyname(socket.gethostname()), sender_wait_port)
 	print("Requestor waits on IP: %s" % client_address[0])
-	print("Sender waiting on port: %s" % sender_wait_port)
+	print("Sender waiting on port: %s \n" % sender_wait_port)
 	if packet_type == 'R':
 		with open(filename, "rb") as fd:
-			message = fd.read()
+			message = fd.read().decode("utf-8")
 			# Client address is combination of IP Address and port
-			send_packets('D', client_address[0], requestor_port, start_seq_no, payload_length, packet_rate, message)
+			send_packets('D', client_address[0], requestor_port, start_seq_no, payload_length, packet_rate, str(message))
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description="Sends chunks of a file to the requester")

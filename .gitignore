@@ -1,5 +1,5 @@
-*/split.txt
-*/tracker.txt
+split*.txt
+tracker.txt
 test.py
 # Byte-compiled / optimized / DLL files
 __pycache__/
