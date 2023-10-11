@@ -4,6 +4,7 @@ import time
 import datetime
 import math
 import argparse
+from threading import Thread
 
 def send_request(Sender_IP, sender_port, filename):
 	print("Sending request to {} on port {}".format(Sender_IP, sender_port))
@@ -68,7 +69,11 @@ def receive_data(UDP_IP, UDP_PORT, filename):
 	print("="*60)
 	print("\n\n")
 	sock.close()
+	return
 
+def send_and_receive_data(filtered_host_info, file_to_request, waiting_port):
+	send_request(socket.gethostbyname(filtered_host_info[2]), filtered_host_info[3], file_to_request)
+	receive_data(socket.gethostbyname(socket.gethostname()), waiting_port, file_to_request)
 
 def main(waiting_port, file_to_request):
 	tracker_data = []
@@ -80,10 +85,14 @@ def main(waiting_port, file_to_request):
 			if filename == file_to_request:
 				tracker_data.append((filename, int(chunk_id), hostname, int(req_port)))
 	tracker_data.sort(key=lambda x: (x[0], x[1]))
+	thread_list = []
 	for filtered_host_info in tracker_data:
+		th = Thread(target=send_and_receive_data, args=(filtered_host_info, file_to_request, waiting_port,))
+		thread_list.append(th)
+		th.start()
 		# print(f"Requesting file: {filtered_host_info[0]} Chunk ID: {filtered_host_info[1]} from Host {filtered_host_info[2]} {(socket.gethostbyname(filtered_host_info[2]))} @ port {filtered_host_info[3]}")
-		send_request(socket.gethostbyname(filtered_host_info[2]), filtered_host_info[3], file_to_request)
-		receive_data(socket.gethostbyname(socket.gethostname()), waiting_port, file_to_request)
+	for th in thread_list:
+		th.join()
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description="Receive chunks of a file from different senders")
