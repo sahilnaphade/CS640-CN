@@ -53,6 +53,9 @@ def receive_data(UDP_IP, UDP_PORT, filename):
 
 		if packet_type == 'E':
 			end_time = time.time()
+			if start_time is None:
+				# case where the file does not exist on the sender
+				start_time = end_time
 			duration = end_time - start_time
 			break
 
