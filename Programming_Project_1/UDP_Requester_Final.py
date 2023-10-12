@@ -65,7 +65,7 @@ def receive_data(UDP_IP, UDP_PORT, filename):
 	print(f"Sender addr:                {addr[0]}:{addr[1]}")
 	print(f"Total Data Packets:         {count - 1}")
 	print(f"Total Data Bytes:           {length_of_payload}")
-	print(f"Average packets/second:     {math.ceil((count - 1) / float(duration))}")
+	print(f"Average packets/second:     {math.ceil((count - 1) / float(duration)) if duration != 0 else 1}")
 	print(f"Total Duration of the test: {round(duration*1000, 2)} ms")
 	print("="*60)
 	print("\n\n")
