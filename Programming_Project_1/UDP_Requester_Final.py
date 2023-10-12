@@ -17,7 +17,6 @@ def send_request(Sender_IP, sender_port, filename):
 
 
 def receive_data(UDP_IP, UDP_PORT, filename):
-	filename = filename + "new_check.txt"
 	sock = socket.socket(socket.AF_INET, # Internet
 						socket.SOCK_DGRAM) # UDP
 	# print("Requster waiting on IP {} @ port {}".format(UDP_IP, UDP_PORT))
