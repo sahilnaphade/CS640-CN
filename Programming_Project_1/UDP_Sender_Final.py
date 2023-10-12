@@ -86,6 +86,7 @@ def main(sender_wait_port, requestor_port, packet_rate, start_seq_no, payload_le
 				# Client address is combination of IP Address and port
 				send_packets('D', client_address[0], requestor_port, start_seq_no, payload_length, packet_rate, str(message))
 		else:
+			print("File with name {} does not exist. Ending the connection.".format(filename))
 			send_packets('E', client_address[0], requestor_port, start_seq_no, payload_length, packet_rate, "")
 
 if __name__ == "__main__":
