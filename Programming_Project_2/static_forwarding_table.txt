@@ -1,0 +1,5 @@
+LOAN-RDS-D633 5000 mumble-05 5000 mumble-05 5000 3000 0
+
+LOAN-RDS-D633 5000 mumble-06 5000 mumble-04 5000 0 20
+
+mumble-04 5000 mumble-06 5000 mumble-06 5000 0 0
