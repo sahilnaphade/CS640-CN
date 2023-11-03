@@ -1,0 +1,1 @@
+Changed the code to implement retransmissions and ACK but sender is not receiving the ACK. Requester should be sending the ACK because I am using the same code that is used to send request even to send ACK..
