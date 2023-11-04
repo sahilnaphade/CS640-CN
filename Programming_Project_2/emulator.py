@@ -6,48 +6,7 @@ from queue import PriorityQueue, Empty
 import random
 import ipaddress
 from io import BlockingIOError
-
-def send_packets(packet, fwd_table, LOG):
-    # Get the forwarding host and port from the packet
-    # host = get_from_table_and_packet TODO
-
-    host_name = host_port = None
-    next_hop_host_name = next_hop_port = loss_prob = None
-    outer_header = packet[0:17]
-    outer_header_up = struct.unpack("cIhIhI", outer_header)
-    dest_ip_int = outer_header_up[3]
-    dest_port = outer_header_up[4]
-    dst_ip = str(ipaddress.ip_address(dest_ip_int))
-    dst_port = int(dest_port)
-    for entry in fwd_table:
-        if entry[0] == dst_ip and entry[1] == dst_port:
-            next_hop_host_name = entry[2]
-            next_hop_port = entry[3]
-            loss_prob = entry[5]
-            break
-    packet_type = packet[17:18].decode('utf-8')
-    # Drop only non-END packets
-    if packet_type != "E":
-        prob = random.random()
-        if prob < loss_prob:
-            # LOG.error(f"SEND  DROP Packet seq: {packet_seq_no} Priority: {priority} from src: {str(src_ip)} dest: {str(dst_ip)} dropped due to full queue")
-            return
-    if next_hop_host_name is None:
-        LOG.exception(f"ROUTE DROP The host {dst_ip} is not in the forwarding table. Dropping the packet".format(next_hop_host_name))
-        return
-    # We had the full packet (including the header) in the queue - send it over the network
-    # TODO Delay the packet
-    send_socket = None
-    try:
-        send_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        send_socket.sendto((packet), (next_hop_host_name, next_hop_port))
-    except Exception as ex:
-        LOG.exception(ex)
-        raise ex
-    finally:
-        if send_socket is not None:
-            send_socket.close()
-
+from utils import *
 
 if __name__ == "__main__":
     # 1. Parse arguments
@@ -62,11 +21,13 @@ if __name__ == "__main__":
     # 2. Setup logging
     logging.basicConfig(
         filename=args.logfilename,
-        level=logging.ERROR,
+        filemode="w",
+        level=logging.INFO,
         format="%(asctime)s - %(levelname)s - %(message)s",
-        datefmt='%Y-%m-%0d %H:%M:%0S'
+        # datefmt='%H:%M:%S',
+        datefmt='%Y-%m-%d %H:%M:%S'
     )
-    LOG = logging.Logger(__name__, logging.DEBUG)
+    LOG = logging.getLogger(__name__)
     LOG.exception("Starting!")
 
     # 3. Read forwarding table and initialize priority queues
@@ -83,7 +44,7 @@ if __name__ == "__main__":
                     dest_host_ip = socket.gethostbyname(dest_host_name)
                     next_hop_ip = socket.gethostbyname(next_hop_host_name)
                     fwd_table.append(tuple([dest_host_ip, int(dest_port), next_hop_ip, int(next_hop_port), int(delay), int(loss_prob)/100]))
-    print(fwd_table)
+    LOG.info(fwd_table)
 
     priority_1_queue = PriorityQueue(maxsize=args.queue_size)
     priority_2_queue = PriorityQueue(maxsize=args.queue_size)
@@ -105,63 +66,68 @@ if __name__ == "__main__":
             data, addr = sock.recvfrom(1024)
         except BlockingIOError as bie:
             pass
-        # Unpack the information from the received socket datagram
+        # If we receive a packet -> unpack the information from the received socket datagram
         if data:
-            outer_header = data[0:17]
-            outer_header_up = struct.unpack("cIhIhI", outer_header)
-            priority, src_ip_int, src_port, dest_ip_int, dest_port, length = outer_header_up
-            src_ip = ipaddress.ip_address(src_ip_int)
-            dst_ip = ipaddress.ip_address(dest_ip_int)
-            print(f"priority: {priority}, src: {src_ip}@{src_port} dest: {dst_ip}@{dest_port}, length: {length}")
-
-            payload_for_outer = data[17:] # payload_for_outer = inner_header + inner_payload
-            payload_for_outer_up = struct.unpack('II', payload_for_outer[1:9])
-            packet_seq_no = socket.ntohl(outer_header_up[0])
+            priority, source_ip, source_port, dest_ip, dest_port, length, packet_type, seq_no, payload = outer_payload_decapsulate(data)
+            print(f"priority: {priority}, src: {source_ip}@{source_port} -> dest: {dest_ip}@{dest_port}, length: {length}")
             
             priority = int(priority)
             if priority == 1:
                 if priority_1_queue.full():
-                    LOG.error(f"QUEUE DROP Packet seq: {packet_seq_no} Priority: {priority} from src: {str(src_ip)} dest: {str(dst_ip)} dropped due to full queue")
+                    LOG.error(f"QUEUE DROP - Packet seq: {seq_no} Priority: {priority} from src: {str(source_ip)} dest: {str(dest_ip)} dropped due to full queue")
                     continue
                 priority_1_queue.put(data)
             elif priority == 2:
                 if priority_2_queue.full():
-                    LOG.error(f"QUEUE DROP Packet seq: {packet_seq_no} Priority: {priority} from src: {str(src_ip)} dest: {str(dst_ip)} dropped due to full queue")
+                    LOG.error(f"QUEUE DROP - Packet seq: {seq_no} Priority: {priority} from src: {str(source_ip)} dest: {str(dest_ip)} dropped due to full queue")
                     continue
                 priority_2_queue.put(data)
             else:
                 if priority_3_queue.full():
-                    LOG.error(f"QUEUE DROP Packet seq: {packet_seq_no} Priority: {priority} from src: {str(src_ip)} dest: {str(dst_ip)} dropped due to full queue")
+                    LOG.error(f"QUEUE DROP - Packet seq: {seq_no} Priority: {priority} from src: {str(source_ip)} dest: {str(dest_ip)} dropped due to full queue")
                     continue
                 priority_3_queue.put(data)
             pass
-        else:
-            # Pop the first item from the priority queue
+        # The packets are received. Now try to transmit if any
+        # Pop the first item from the priority queue
+        packet = None
+        try:
+            packet = priority_1_queue.get(block=False, timeout=0)
+        except Empty as em:
+            LOG.debug("No message found")
             packet = None
+            pass
+        # If there are no 1 priority elements, get priority 2 elements
+        if packet is None:
             try:
-                packet = priority_1_queue.get(block=False, timeout=0)
+                packet = priority_2_queue.get(block=False, timeout=0)
             except Empty as em:
-                LOG.debug("No message found")
                 packet = None
                 pass
-            # If there are no 1 priority elements, get priority 2 elements
-            if packet is None:
-                try:
-                    packet = priority_2_queue.get(block=False, timeout=0)
-                except Empty as em:
-                    packet = None
-                    pass
-            # If there are no 2 priority elements, get priority 3 elements
-            if packet is None:
-                try:
-                    packet = priority_3_queue.get(block=False, timeout=0)
-                except Empty as em:
-                    packet = None
-                    pass
-            if packet is None:
-                LOG.info("No messages in any priority queue")
-                continue
-            else:
-                # Route and Send the packet over the network, after making sure of the packet dropping
-                send_packets(packet, fwd_table, LOG)
+        # If there are no 2 priority elements, get priority 3 elements
+        if packet is None:
+            try:
+                packet = priority_3_queue.get(block=False, timeout=0)
+            except Empty as em:
+                packet = None
                 pass
+        if packet is None:
+            LOG.info("No messages in any priority queue")
+            continue
+        else:
+            priority, source_ip, source_port, dest_ip, dest_port, length, packet_type, seq_no, data = outer_payload_decapsulate(packet)
+            for entry in fwd_table:
+                if entry[0] == dest_ip and entry[1] == dest_port:
+                    next_hop_host_name = entry[2]
+                    next_hop_port = entry[3]
+                    loss_prob = entry[5]
+                    break
+            if next_hop_host_name is None:
+                LOG.error(f"ROUTE DROP - Destination Host '{dest_ip}@{dest_port}' is not in the forwarding table. Dropping the packet")
+                continue
+            if packet_type != 'E':
+                if random.random() < loss_prob:
+                    LOG.error(f"SEND  DROP - source: {source_ip}@{source_port} seqno: {seq_no} destination: {dest_ip}@{dest_port}")
+                    continue
+            send_packet(packet, next_hop_host_name, next_hop_port, log_handler=LOG)
+            pass
