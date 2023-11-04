@@ -53,11 +53,11 @@ def Receive_ACK(timeout, UDP_PORT, window):
 			packet_type = data_ack[0:1].decode('utf-8')
 			print(f"This is the packet type {packet_type}")
 		
-			#if packet_type == 'A':
-			header_ack = data_ack[1:9]
-			header_ack = struct.unpack('II', header_ack)
-			sequence_number_network_ack = header_ack[0]
-			sequence_number_ack = socket.ntohl(sequence_number_network_ack)
+			if packet_type == 'A':
+				header_ack = data_ack[1:9]
+				header_ack = struct.unpack('II', header_ack)
+				sequence_number_network_ack = header_ack[0]
+				sequence_number_ack = socket.ntohl(sequence_number_network_ack)
 
 			if sequence_number_ack in window:
 				print(f"Received ACK for sequence_number : {sequence_number_ack}")
@@ -80,7 +80,7 @@ def packet_retransmit(window,retransmission_count,packet_type,payload_length,req
 			sock.sendto((header + window[seq_no].encode("utf-8")),
 					(requester_addr, requestor_wait_port))
 			
-			print(f"Retransmitting Packet... {retransmission_count}")
+			print(f"Retransmitting Packet...for sequence number {retransmission_count[seq_no]}")
 			
 			
 			total_transmissions += 1
@@ -145,7 +145,6 @@ def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_numb
 					if bool(window) == False:
 						break
 					window = Receive_ACK(timeout,UDP_PORT,window)
-				sock.close()
 
 		
 				k = k + window_size
