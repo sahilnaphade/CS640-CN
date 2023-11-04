@@ -6,23 +6,23 @@ import datetime
 import math
 import argparse
 
-def send_request_ack(packet_type,Sender_IP, sender_port, filename, window,sequence_number):
+def send_request_ack(packet_type,Sender_IP, sender_port, filename, window,sequence_number, emulator_name, emulator_port):
 	#print("Sending request to {} on port {}".format(Sender_IP, sender_port))
 	try:
 		sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 		seq_no = socket.htonl(0)
 		if packet_type == 'R':
-			request_header = str(packet_type).encode("utf-8") + struct.pack('II', seq_no, window)
+			request_inner_header = str(packet_type).encode("utf-8") + struct.pack('II', seq_no, window)
 			print("Request sent \n")
 
 		elif packet_type == 'A':
 			print(f"ACK sent for {sequence_number} \n")
 			sequence_number = socket.htonl(sequence_number)
-			request_header = str(packet_type).encode("utf-8") + struct.pack('II', sequence_number, 0)
-			
+			request_inner_header = str(packet_type).encode("utf-8") + struct.pack('II', sequence_number, 0)
+		request_outer_header = struct.pack("cIhIhI", "1".encode('utf-8'), socket.gethostbyname(), 5000, Sender_IP, sender_port, len(request_inner_header)) # TODO Remove the hardcoded port
 
-		sock.sendto(request_header + bytes(filename, 'utf-8'), (Sender_IP,sender_port))
-		
+		sock.sendto(request_outer_header + request_inner_header + bytes(filename, 'utf-8'), (emulator_name,emulator_port))
+
 		sock.close()
 	except Exception as ex:
 		raise ex
@@ -47,8 +47,11 @@ def receive_data(UDP_IP, UDP_PORT, filename,Sender_IP, sender_port,window):
 			while time.time() - start_time < 1:
 				try:
 
-					data, addr = sock.recvfrom(1024) # buffer size is 1024 bytes
-
+					packet, addr = sock.recvfrom(1024) # buffer size is 1024 bytes
+					outer_packet_hdr = packet[0:17]
+					outer_p_hdr_up = struct.unpack("cIhIhI", outer_packet_hdr)
+					priority, src_ip_int, src_ip_port, dest_ip_int, dest_port, length = outer_p_hdr_up
+					data = packet[17:]
 					packet_type = data[0:1].decode('utf-8')
 					header = data[1:9]
 					header = struct.unpack('II',header)
@@ -129,7 +132,7 @@ def receive_data(UDP_IP, UDP_PORT, filename,Sender_IP, sender_port,window):
 		raise ex
 
 
-def main(waiting_port, file_to_request, window):
+def main(waiting_port, file_to_request, window, emulator_host, emulator_port):
 	tracker_data = []
 	if os.path.exists("tracker.txt"):
 		with open("tracker.txt", "r") as tracker_file:
@@ -142,7 +145,7 @@ def main(waiting_port, file_to_request, window):
 		tracker_data.sort(key=lambda x: (x[0], x[1]))
 		for filtered_host_info in tracker_data:
 			# print(f"Requesting file: {filtered_host_info[0]} Chunk ID: {filtered_host_info[1]} from Host {filtered_host_info[2]} {(socket.gethostbyname(filtered_host_info[2]))} @ port {filtered_host_info[3]}")
-			send_request_ack('R',socket.gethostbyname(filtered_host_info[2]), filtered_host_info[3], file_to_request, window,1)
+			send_request_ack('R',socket.gethostbyname(filtered_host_info[2]), filtered_host_info[3], file_to_request, window,1, emulator_host, emulator_port)
 			receive_data(socket.gethostbyname(socket.gethostname()), waiting_port, file_to_request,socket.gethostbyname(filtered_host_info[2]), filtered_host_info[3],window)
 	else:
 		raise Exception("Tracker file does not exist.")
@@ -153,8 +156,10 @@ if __name__ == "__main__":
 	parser.add_argument("-p", "--port", dest='port', type=int, required=True, help="Port number on which the requester waits for packets")
 	parser.add_argument("-o", "--file-option", dest='file_option', type=str, required=True, help="File name to get the data for")
 	parser.add_argument("-w", "--window_size", dest='window', type=int, required=True, help="Window size to request data")
+	parser.add_argument("-f", dest="emulator_host_name", type=str, required=True, help="Hostname of the emulator")
+	parser.add_argument("-e", dest="emulator_port", type=int, required=True, help="Port of the emulator")
 	args = parser.parse_args()
 	if args.port not in range(2050, 65536):
 		raise Exception("Port number should be in the range 2050 to 65535. Passed: {}".format(args.port))
-	main(args.port, args.file_option, args.window)
+	main(args.port, args.file_option, args.window, args.emulator_host_name, args.emulator_port)
 

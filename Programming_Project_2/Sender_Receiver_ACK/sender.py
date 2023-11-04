@@ -18,8 +18,10 @@ def receive_request(UDP_IP, UDP_PORT):
 
 		while True:
 			data, addr = sock.recvfrom(1024) # buffer size is 1024 bytes
-			packet_type = data[0:1].decode('utf-8')
-			header = data[1:9]
+			outer_header = data[0:17]
+			outer_header_up = struct.unpack("cIhIhI", outer_header)
+			packet_type = data[17:18].decode('utf-8')
+			header = data[18:27]
 			header = struct.unpack('II', header)
 			sequence_number_network = header[0]
 			sequence_number = socket.ntohl(sequence_number_network)
@@ -49,6 +51,7 @@ def Receive_ACK(timeout, UDP_PORT, window):
 
 	while time.time() - start_time < timeout:
 		try:
+			# TODO Extract data from the new header and then old header (check receive_request)
 			data_ack, addr = sock_receive.recvfrom(1024) # buffer size is 1024 bytes
 			packet_type = data_ack[0:1].decode('utf-8')
 			print(f"This is the packet type {packet_type}")
@@ -68,7 +71,7 @@ def Receive_ACK(timeout, UDP_PORT, window):
 	
 	return window
 
-def packet_retransmit(window,retransmission_count,packet_type,payload_length,requester_addr,requestor_wait_port,sock,rate,total_transmissions):
+def packet_retransmit(window,retransmission_count,packet_type,payload_length,requester_addr,requestor_wait_port,sock,rate,total_transmissions, emulator_host, emulator_port):
 
 	key_copy = tuple(window.keys())
 	for seq_no in key_copy:
@@ -76,9 +79,9 @@ def packet_retransmit(window,retransmission_count,packet_type,payload_length,req
 		if retransmission_count[seq_no] < 6:
 
 			header = create_header(packet_type, seq_no, payload_length)
-			
+			# TODO Create and add new header in front of old header
 			sock.sendto((header + window[seq_no].encode("utf-8")),
-					(requester_addr, requestor_wait_port))
+					(emulator_host, emulator_port))
 			
 			print(f"Retransmitting Packet...for sequence number {retransmission_count[seq_no]}")
 			
@@ -99,11 +102,8 @@ def create_header(packet_type, sequence_number, payload_length):
 	return header
 
 
-def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_number, payload_length, rate, message, timeout, window_size, UDP_PORT):
+def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_number, payload_length, rate, message, timeout, window_size, UDP_PORT, emulator_host, emulator_port):
 	try:
-		
-
-	
 		max_retransmits = 5
 		window = {}
 		total_transmissions = 0
@@ -122,7 +122,11 @@ def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_numb
 		# sock.bind((requester_addr, 5000))
 				for n in chunks[k:k+window_size]:
 					header = create_header(packet_type, sequence_number, payload_length)
-					sock.sendto((header + n.encode("utf-8")),(requester_addr, requestor_wait_port))
+					inner_payload = header + n.encode("utf-8")
+					# TODO Remove the hardcoded port
+					outer_header = struct.pack("cIhIhI", "1".encode('utf-8'), socket.gethostname(), 5000, requester_addr, requestor_wait_port, len(inner_payload))
+
+					sock.sendto((outer_header + inner_payload),(emulator_host, emulator_port))
 					print(f"Sending Packet... with sequence number : {sequence_number}")
 					
 					window[sequence_number] = n
@@ -141,7 +145,7 @@ def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_numb
 						retransmission_count[seq_no] = 0
 				
 				while bool(window) == True:
-					window = packet_retransmit(window,retransmission_count,packet_type,payload_length,requester_addr,requestor_wait_port,sock,rate,total_transmissions)
+					window = packet_retransmit(window,retransmission_count,packet_type,payload_length,requester_addr,requestor_wait_port,sock,rate,total_transmissions, emulator_host, emulator_port)
 					if bool(window) == False:
 						break
 					window = Receive_ACK(timeout,UDP_PORT,window)
@@ -151,7 +155,7 @@ def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_numb
 
 						
 		end_header = create_header('E', sequence_number, 0)
-		sock.sendto(end_header + str(0).encode("utf-8"), (requester_addr, requestor_wait_port))
+		sock.sendto(end_header + str(0).encode("utf-8"), (emulator_host, emulator_port))
 
 		current_time = time.time()
 		milliseconds = int((current_time - int(current_time)) * 1000)
@@ -166,7 +170,7 @@ def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_numb
 		raise ex
 
 
-def main(sender_wait_port, requestor_port, packet_rate, start_seq_no, payload_length, timeout):
+def main(sender_wait_port, requestor_port, packet_rate, start_seq_no, payload_length, timeout, emulator_host, emulator_port):
 	packet_type, filename, client_address, window_size = receive_request(socket.gethostbyname(socket.gethostname()), sender_wait_port)
 	print("Requestor waits on IP: %s" % client_address[0])
 	print("Sender waiting on port: %s \n" % sender_wait_port)
@@ -175,10 +179,10 @@ def main(sender_wait_port, requestor_port, packet_rate, start_seq_no, payload_le
 			with open(filename, "rb") as fd:
 				message = fd.read().decode("utf-8")
 				# Client address is combination of IP Address and port
-				send_packets('D', client_address[0], requestor_port, start_seq_no, payload_length, packet_rate, str(message), timeout, window_size, sender_wait_port)
+				send_packets('D', client_address[0], requestor_port, start_seq_no, payload_length, packet_rate, str(message), timeout, window_size, sender_wait_port, emulator_host, emulator_port)
 		else:
 			print("File with name {} does not exist. Ending the connection.\n".format(filename))
-			send_packets('E', client_address[0], requestor_port, start_seq_no, payload_length, packet_rate, "", timeout, window_size,sender_wait_port)
+			send_packets('E', client_address[0], requestor_port, start_seq_no, payload_length, packet_rate, "", timeout, window_size,sender_wait_port, emulator_host, emulator_port)
 
 
 if __name__ == "__main__":
@@ -189,12 +193,14 @@ if __name__ == "__main__":
 	parser.add_argument("-q", "--seq-no", dest="start_seq_no", type=int, required=True, help="Initial sequence number of the package exchange")
 	parser.add_argument("-l", "--length", dest="payload_length", type=int, required=True, help="Length of the payload in the packets (in bytes)")
 	parser.add_argument("-t", "--timeout", dest="timeout", type=float, required=True, help="Timeout to receive ACK")
+	parser.add_argument("-f", dest="emulator_host_name", type=str, required=True, help="Hostname of the emulator")
+	parser.add_argument("-e", dest="emulator_port", type=int, required=True, help="Port of the emulator")
 
 	args = parser.parse_args()
 	for port_numbers in [args.port, args.requestor_port]:
 		if port_numbers not in range(2050, 65536):
 			raise Exception("Port number should be in the range 2050 to 65535. Passed: {}".format(port_numbers))
-	main(args.port, args.requestor_port, args.rate, args.start_seq_no, args.payload_length, args.timeout)
+	main(args.port, args.requestor_port, args.rate, args.start_seq_no, args.payload_length, args.timeout, args.emulator_host_name, args.emulator_port)
 
 
 
