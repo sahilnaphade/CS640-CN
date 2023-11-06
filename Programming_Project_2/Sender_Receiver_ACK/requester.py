@@ -5,6 +5,7 @@ import time
 import datetime
 import math
 import argparse
+import ipaddress
 
 def send_request_ack(packet_type,Sender_IP, sender_port, filename, window,sequence_number, emulator_name, emulator_port):
 	#print("Sending request to {} on port {}".format(Sender_IP, sender_port))
@@ -19,16 +20,18 @@ def send_request_ack(packet_type,Sender_IP, sender_port, filename, window,sequen
 			print(f"ACK sent for {sequence_number} \n")
 			sequence_number = socket.htonl(sequence_number)
 			request_inner_header = str(packet_type).encode("utf-8") + struct.pack('II', sequence_number, 0)
-		request_outer_header = struct.pack("cIhIhI", "1".encode('utf-8'), socket.gethostbyname(), 5000, Sender_IP, sender_port, len(request_inner_header)) # TODO Remove the hardcoded port
+		
+		request_outer_header =  struct.pack("<cIhIhI", "1".encode('utf-8'), int(ipaddress.ip_address(socket.gethostbyname(socket.gethostname()))), 5000, int(ipaddress.ip_address(Sender_IP)), sender_port, int(len(request_inner_header))) # TODO Remove the hardcoded port
 
-		sock.sendto(request_outer_header + request_inner_header + bytes(filename, 'utf-8'), (emulator_name,emulator_port))
+		#sock.sendto(request_outer_header + request_inner_header + bytes(filename, 'utf-8'), (emulator_name,emulator_port))
+		sock.sendto(request_outer_header + request_inner_header + bytes(filename, 'utf-8'), (Sender_IP,sender_port))
 
 		sock.close()
 	except Exception as ex:
 		raise ex
 
 
-def receive_data(UDP_IP, UDP_PORT, filename,Sender_IP, sender_port,window):
+def receive_data(UDP_IP, UDP_PORT, filename,Sender_IP, sender_port,window, emulator_name, emulator_port):
 	try:
 		sock = socket.socket(socket.AF_INET, # Internet
 							socket.SOCK_DGRAM) # UDP
@@ -47,30 +50,31 @@ def receive_data(UDP_IP, UDP_PORT, filename,Sender_IP, sender_port,window):
 			while time.time() - start_time < 1:
 				try:
 
-					packet, addr = sock.recvfrom(1024) # buffer size is 1024 bytes
-					outer_packet_hdr = packet[0:17]
-					outer_p_hdr_up = struct.unpack("cIhIhI", outer_packet_hdr)
-					priority, src_ip_int, src_ip_port, dest_ip_int, dest_port, length = outer_p_hdr_up
-					data = packet[17:]
-					packet_type = data[0:1].decode('utf-8')
-					header = data[1:9]
-					header = struct.unpack('II',header)
+					data, addr = sock.recvfrom(1024) # buffer size is 1024 bytes
+					outer_header = data[0:17]
+					outer_header_up = struct.unpack("<cIhIhI", outer_header)
+					packet_type = data[17:18].decode('utf-8')
+					header = data[18:26]
+					header = struct.unpack('II', header)
 					sequence_number_network = header[0]
-					packet_length = header[1]
 					sequence_number = socket.ntohl(sequence_number_network)
+					#packet_length = struct.unpack('!I', data[5:9])[0]
+					packet_length = header[1]
 					count = count + 1
 					length_of_payload = length_of_payload + packet_length
 
 					if count == 1 :
 						start_time = time.time()
-					payload = data[9:].decode('utf-8')
+
+					payload = data[26:].decode('utf-8')
+					
 					#payload = str(data[9:])
 					print(f"Packet Type:    {packet_type}")
 					print(f"Recv Time:      {str(datetime.datetime.now())}")
 					print(f"Sender Addr:    {addr[0]}:{addr[1]}")
 					print(f"Seq No:         {sequence_number}")
 					print(f"Length:         {packet_length}")
-					print(f"Payload:        {data[9:(9+4)].decode('utf-8')}")
+					print(f"Payload:        {data[26:(26+4)].decode('utf-8')}")
 
 					if packet_type == 'D':
 						if bool(received_data) == False:
@@ -102,7 +106,7 @@ def receive_data(UDP_IP, UDP_PORT, filename,Sender_IP, sender_port,window):
 			for seq_no in keycopy:
 				
 				print("This is the ACK...")
-				send_request_ack('A',Sender_IP, sender_port, filename, window,seq_no)
+				send_request_ack('A',Sender_IP, sender_port, filename, window,seq_no,emulator_name,emulator_port)
 				buffer.pop(seq_no)
 				
 				
@@ -146,7 +150,7 @@ def main(waiting_port, file_to_request, window, emulator_host, emulator_port):
 		for filtered_host_info in tracker_data:
 			# print(f"Requesting file: {filtered_host_info[0]} Chunk ID: {filtered_host_info[1]} from Host {filtered_host_info[2]} {(socket.gethostbyname(filtered_host_info[2]))} @ port {filtered_host_info[3]}")
 			send_request_ack('R',socket.gethostbyname(filtered_host_info[2]), filtered_host_info[3], file_to_request, window,1, emulator_host, emulator_port)
-			receive_data(socket.gethostbyname(socket.gethostname()), waiting_port, file_to_request,socket.gethostbyname(filtered_host_info[2]), filtered_host_info[3],window)
+			receive_data(socket.gethostbyname(socket.gethostname()), waiting_port, file_to_request,socket.gethostbyname(filtered_host_info[2]), filtered_host_info[3],window, emulator_host, emulator_port)
 	else:
 		raise Exception("Tracker file does not exist.")
 
