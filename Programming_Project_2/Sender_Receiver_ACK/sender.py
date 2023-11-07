@@ -3,9 +3,19 @@ import struct
 import os
 from io import BlockingIOError
 import time
+from utils import *
 import argparse
 import ipaddress
+from threading import Thread, Lock
 
+# We can keep entire packet in memory in some data structure -> that way we dont need to get the requester info again and again
+window_lock = Lock()
+window = {}
+retransmission_count = {}
+THREADS = [2]
+
+
+# TODO Combine the logic of both receive request and receive ACK
 """Receives request from the Requester for the filename (from which data is to be sent)"""
 def receive_request(UDP_IP, UDP_PORT):
 	sock = None
@@ -42,8 +52,9 @@ def receive_request(UDP_IP, UDP_PORT):
 		raise ex
 
 
-def Receive_ACK(timeout, UDP_PORT, window):
+def Receive_ACK(timeout, UDP_PORT):
 	start_time = time.time()
+	global window
 	sock_receive = socket.socket(socket.AF_INET, # Internet
 			socket.SOCK_DGRAM)
 	
@@ -68,17 +79,28 @@ def Receive_ACK(timeout, UDP_PORT, window):
 
 			if sequence_number_ack in window:
 				print(f"Received ACK for sequence_number : {sequence_number_ack}")
+				window_lock.acquire()
 				window.pop(sequence_number_ack)
+				window_lock.release()
 		
 		except BlockingIOError as bie:
 			continue
 	
 	return window
 
-def packet_retransmit(window,retransmission_count,packet_type,payload_length,requester_addr,requestor_wait_port,sock,rate,total_transmissions, emulator_host, emulator_port,priority):
-
-	key_copy = tuple(window.keys())
-	for seq_no in key_copy:
+def packet_retransmit(retransmission_count,packet_type,payload_length,requester_addr,requestor_wait_port,sock,rate,total_transmissions, emulator_host, emulator_port,priority, timeout):
+	global window
+	retransmit_required_seq_no = []
+	window_lock.acquire()
+	for seq_no, send_info in window.items():
+		if send_info['latest_send_time'] + timeout > time.time():
+			retransmit_required_seq_no.append(seq_no)
+		pass
+	window_lock.release()
+	send_times = {} # To update back the window
+	gave_up_packets = []
+	# Now send the packets
+	for seq_no in retransmit_required_seq_no:
 		retransmission_count[seq_no] += 1
 		if retransmission_count[seq_no] < 6:
 
@@ -95,16 +117,26 @@ def packet_retransmit(window,retransmission_count,packet_type,payload_length,req
 					(requester_addr, requestor_wait_port))
 
 			print(f"Retransmitting Packet...for sequence number {seq_no} and count is {retransmission_count[seq_no]}")
-			
-			
+			send_times[seq_no] = time.time() 
 			total_transmissions += 1
 			flag = 0
 			time.sleep(1/rate)
 		else:
 			print(f"Gave up on packet with sequence number {seq_no} after {5} retransmits.")
+			gave_up_packets.append(seq_no)
 			window.pop(seq_no)
+	# Update the global window to be used in other logics
+	window_lock.acquire()
+	for seq_no, send_time in send_times.items():
+		if seq_no not in window:
+			# We must have received ACK in the meanwhile. Do not update the info
+			print(f"Seq no {seq_no} not found in the window after retransmission!")
+			continue
+		window[seq_no]['latest_send_time'] = send_time
+		window[seq_no]['transmit_attempt'] += 1
+	window_lock.release()
 			
-	return window
+	# return window
 
 
 def create_header(packet_type, sequence_number, payload_length):
@@ -114,11 +146,11 @@ def create_header(packet_type, sequence_number, payload_length):
 
 
 def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_number, payload_length, rate, message, timeout, window_size, UDP_PORT, emulator_host, emulator_port,priority):
+	global window
 	try:
 		max_retransmits = 5
-		window = {}
+		
 		total_transmissions = 0
-		retransmission_count = {}
 		buffer = []
 		sequence_number = 1
 
@@ -140,8 +172,8 @@ def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_numb
 					
 
 					#sock.sendto((outer_header + inner_payload),(emulator_host, emulator_port))
-
-					sock.sendto((outer_header + inner_payload + n.encode("utf-8")),
+					packet = outer_header + inner_payload + n.encode("utf-8")
+					sock.sendto((packet),
 					(requester_addr, requestor_wait_port))
 
 					print(f"Sending Packet... with sequence number : {sequence_number}")
@@ -157,7 +189,7 @@ def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_numb
 					print(f"Payload:            {n[:4]}")
 					print("\n")
 					
-					window[sequence_number] = n
+					window[sequence_number] = {'packet': packet, 'latest_send_time': current_time, 'transmit_attempt': 0}
 
 					sequence_number += 1
 					
@@ -165,18 +197,18 @@ def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_numb
 
 					time.sleep(1/rate)
 				
-				window = Receive_ACK(timeout,UDP_PORT,window)
+				# window = Receive_ACK(timeout,UDP_PORT, window)
 
-				if (bool(window)) == True:
-					print("Did not receive ACK")
-					for seq_no in window:
-						retransmission_count[seq_no] = 0
+				# if (bool(window)) == True:
+				# 	print("Did not receive ACK")
+				# 	for seq_no in window:
+				# 		retransmission_count[seq_no] = 0
 				
-				while bool(window) == True:
-					window = packet_retransmit(window,retransmission_count,packet_type,payload_length,requester_addr,requestor_wait_port,sock,rate,total_transmissions, emulator_host, emulator_port,priority)
-					if bool(window) == False:
-						break
-					window = Receive_ACK(timeout,UDP_PORT,window)
+				# while bool(window) == True:
+				# 	window = packet_retransmit(window,retransmission_count,packet_type,payload_length,requester_addr,requestor_wait_port,sock,rate,total_transmissions, emulator_host, emulator_port,priority)
+				# 	if bool(window) == False:
+				# 		break
+				# 	window = Receive_ACK(timeout,UDP_PORT,window)
 
 		
 				k = k + window_size
@@ -213,6 +245,14 @@ def main(sender_wait_port, requestor_port, packet_rate, start_seq_no, payload_le
 			with open(filename, "rb") as fd:
 				message = fd.read().decode("utf-8")
 				# Client address is combination of IP Address and port
+				global THREADS
+				# TODO Combine Receive_ACK and receive_packets
+				# TODO Can we Combine send_packets and retransmit ? 
+				THREADS[1] = Thread(target=receive_packet)
+				THREADS[0] = Thread(target=send_packets, args=('D', client_address[0], requestor_port, start_seq_no, payload_length, packet_rate, str(message), timeout, window_size, sender_wait_port, emulator_host, emulator_port,priority))
+				# THREADS[2] = Thread(target=packet_retransmit, args=(retransmission_count,packet_type,payload_length,requester_addr,requestor_wait_port,sock,rate,total_transmissions, emulator_host, emulator_port,priority, timeout))
+				for threads in THREADS:
+					threads.start()
 				send_packets('D', client_address[0], requestor_port, start_seq_no, payload_length, packet_rate, str(message), timeout, window_size, sender_wait_port, emulator_host, emulator_port,priority)
 		else:
 			print("File with name {} does not exist. Ending the connection.\n".format(filename))
