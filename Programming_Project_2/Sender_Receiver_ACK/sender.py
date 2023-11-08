@@ -65,7 +65,7 @@ def receive_request(UDP_IP, UDP_PORT):
 
 def Receive_ACK(timeout, UDP_PORT):
 	start_time = time.time()
-	global window
+	global window, window_lock
 	sock_receive = socket.socket(socket.AF_INET, # Internet
 			socket.SOCK_DGRAM)
 	
@@ -111,7 +111,7 @@ def create_header(packet_type, sequence_number, payload_length):
 
 
 def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_number, payload_length, rate, message, timeout, window_size, UDP_PORT, emulator_host, emulator_port,priority):
-	global window
+	global window, window_lock
 	global transmit_count
 	sock = socket.socket(socket.AF_INET, # Internet
 				socket.SOCK_DGRAM) # UDP
