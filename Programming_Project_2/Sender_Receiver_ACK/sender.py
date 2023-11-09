@@ -137,8 +137,9 @@ def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_numb
 
 						#sock.sendto((outer_header + inner_payload),(emulator_host, emulator_port))
 						packet = outer_header + inner_payload + n.encode("utf-8")
-						sock.sendto((packet),
-						(requester_addr, requestor_wait_port))
+						# sock.sendto((packet),
+						# (requester_addr, requestor_wait_port))
+						sock.sendto((outer_header + inner_payload),(emulator_host, emulator_port))
 
 						print(f"Sending Packet... with sequence number : {sequence_number}")
 
@@ -184,8 +185,9 @@ def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_numb
 								transmit_attempt = packet_transmit_attempt[1]
 								packet_priority, src_ip, src_port, dest_ip, dest_port, length, packet_type, seq_no, data = outer_payload_decapsulate(packet)
 								print(f"Retransmitting Packet...for sequence number {seq_no} and count is {transmit_attempt+1}")
-								# sock.sendto(packet, (emulator_host, emulator_port))
-								sock.sendto(packet, (requester_addr, requestor_wait_port))
+								sock.sendto(packet, (emulator_host, emulator_port))
+								# sock.sendto(packet, (requester_addr, requestor_wait_port))
+								
 								send_times[seq_no] = time.time()
 								time.sleep(1/rate)
 								# retransmission_count[seq_no] += 1
@@ -226,8 +228,9 @@ def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_numb
 			#sock.sendto(end_header + str(0).encode("utf-8"), (emulator_host, emulator_port))
 
 			end_outer_header =  struct.pack("<cIhIhI", "1".encode('utf-8'), int(ipaddress.ip_address(socket.gethostbyname(socket.gethostname()))), 5000, int(ipaddress.ip_address(requester_addr)), requestor_wait_port, 0)
-			sock.sendto((end_outer_header + end_header),
-						(requester_addr, requestor_wait_port))
+			# sock.sendto((end_outer_header + end_header),
+			# 			(requester_addr, requestor_wait_port))
+			sock.sendto((end_outer_header + end_header),(emulator_host, emulator_port))
 
 
 

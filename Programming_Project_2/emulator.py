@@ -112,7 +112,7 @@ if __name__ == "__main__":
                 packet = None
                 pass
         if packet is None:
-            LOG.info("No messages in any priority queue")
+            LOG.debug("No messages in any priority queue")
             continue
         else:
             priority, source_ip, source_port, dest_ip, dest_port, length, packet_type, seq_no, data = outer_payload_decapsulate(packet)

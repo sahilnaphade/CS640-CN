@@ -21,7 +21,7 @@ def send_request(packet_type,Sender_IP, sender_port, filename, emulator_name, em
 		request_inner_header = str(packet_type).encode("utf-8") + struct.pack('II', seq_no, window)
 		request_outer_header =  struct.pack("<cIhIhI", "1".encode('utf-8'), int(ipaddress.ip_address(socket.gethostbyname(socket.gethostname()))), 5000, int(ipaddress.ip_address(Sender_IP)), sender_port, int(len(request_inner_header)))
 		
-		sock.sendto(request_outer_header + request_inner_header + bytes(filename, 'utf-8'), (Sender_IP,sender_port))
+		sock.sendto(request_outer_header + request_inner_header + bytes(filename, 'utf-8'), (emulator_name,emulator_port))
 		print(f"Request sent to the sender !!")
 		sock.close()
 	except Exception as ex:
@@ -39,7 +39,7 @@ def send_ack(Sender_IP, sender_port, emulator_name, emulator_port,priority):
 				request_inner_header = 'A'.encode("utf-8") + struct.pack('II', seq_no, 0)
 				request_outer_header =  struct.pack("<cIhIhI", "1".encode('utf-8'), int(ipaddress.ip_address(socket.gethostbyname(socket.gethostname()))), 5000, int(ipaddress.ip_address(Sender_IP)), sender_port, int(len(request_inner_header)))
 				
-				sock.sendto(request_outer_header + request_inner_header + '1'.encode('utf-8'), (Sender_IP,sender_port))
+				sock.sendto(request_outer_header + request_inner_header + '1'.encode('utf-8'), (emulator_name,emulator_port))
 				
 				print(f"ACK sent to the sender for sequence number : {seq_no}")
 				received_data_lock.acquire()
@@ -86,7 +86,7 @@ def receive_data(UDP_IP, UDP_PORT, filename,Sender_IP, sender_port,window, emula
 		# print("Requster waiting on IP {} @ port {}".format(UDP_IP, UDP_PORT))
 		sock.setblocking(0)
 		global received_data, received_data_lock
-		sock.bind(('0.0.0.0', emulator_port))
+		sock.bind(('0.0.0.0', UDP_PORT))
 		start_time = None
 		count = 0
 		length_of_payload = 0
