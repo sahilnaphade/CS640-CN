@@ -14,13 +14,13 @@ THREADS = []
 received_data = {}
 received_data_lock = Lock()
 
-def send_request(packet_type,Sender_IP, sender_port, filename, emulator_name, emulator_port,priority,window):
+def send_request(packet_type,Sender_IP, sender_port, filename, emulator_name, emulator_port,priority,window, waiting_port):
 	try:
 		sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 		seq_no = socket.htonl(0)
 		request_inner_header = str(packet_type).encode("utf-8") + struct.pack('II', seq_no, window)
-		request_outer_header =  struct.pack("<cIhIhI", "1".encode('utf-8'), int(ipaddress.ip_address(socket.gethostbyname(socket.gethostname()))), 5000, int(ipaddress.ip_address(Sender_IP)), sender_port, int(len(request_inner_header)))
-		
+		#request_outer_header =  struct.pack("<cIhIhI", "1".encode('utf-8'), int(ipaddress.ip_address(socket.gethostbyname(socket.gethostname()))), waiting_port, int(ipaddress.ip_address(Sender_IP)), sender_port, int(len(request_inner_header)))
+		request_outer_header =  struct.pack("<cIhIhI", "1".encode('utf-8'), int(ipaddress.ip_address("10.141.215.235")), waiting_port, int(ipaddress.ip_address(Sender_IP)), sender_port, int(len(request_inner_header)))
 		sock.sendto(request_outer_header + request_inner_header + bytes(filename, 'utf-8'), (emulator_name,emulator_port))
 		print(f"Request sent to the sender !!")
 		sock.close()
@@ -185,7 +185,7 @@ def main(waiting_port, file_to_request, window, emulator_host, emulator_port):
 			# print(f"Requesting file: {filtered_host_info[0]} Chunk ID: {filtered_host_info[1]} from Host {filtered_host_info[2]} {(socket.gethostbyname(filtered_host_info[2]))} @ port {filtered_host_info[3]}")
 			send_thread = threading.Thread(target=send_ack,args=(socket.gethostbyname(filtered_host_info[2]), filtered_host_info[3], emulator_host, emulator_port, 1))
 			send_thread.start()
-			send_request('R',socket.gethostbyname(filtered_host_info[2]), filtered_host_info[3], file_to_request, emulator_host, emulator_port, 1, window)
+			send_request('R',socket.gethostbyname(filtered_host_info[2]), filtered_host_info[3], file_to_request, emulator_host, emulator_port, 1, window, waiting_port)
 			receive_data(socket.gethostbyname(socket.gethostname()), waiting_port, file_to_request,socket.gethostbyname(filtered_host_info[2]), filtered_host_info[3],window, emulator_host, emulator_port)
 			
 			
