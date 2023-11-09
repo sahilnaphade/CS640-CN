@@ -63,7 +63,7 @@ def receive_request(UDP_IP, UDP_PORT):
 			sock.close()
 
 
-def Receive_ACK(timeout, UDP_PORT):
+def receive_ACK(UDP_PORT):
 	start_time = time.time()
 	global window, window_lock
 	sock_receive = socket.socket(socket.AF_INET, # Internet
@@ -72,7 +72,7 @@ def Receive_ACK(timeout, UDP_PORT):
 	sock_receive.setblocking(0)
 	sock_receive.bind(('0.0.0.0', UDP_PORT))
 
-	while time.time() - start_time < timeout:
+	while True:
 		try:
 			# TODO Extract data from the new header and then old header (check receive_request) - Done
 			data_ack, addr = sock_receive.recvfrom(1024) # buffer size is 1024 bytes
@@ -93,8 +93,6 @@ def Receive_ACK(timeout, UDP_PORT):
 		
 		except BlockingIOError as bie:
 			continue
-	
-	return window
 
 # def packet_retransmit(packet_type, payload_length, rate, emulator_host, emulator_port, priority, timeout):
 	
@@ -247,6 +245,8 @@ def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_numb
 
 def main(sender_wait_port, requestor_port, packet_rate, start_seq_no, payload_length, timeout, emulator_host, emulator_port, priority):
 	packet_type, filename, client_address, window_size = receive_request(socket.gethostbyname(socket.gethostname()), sender_wait_port)
+	t1 = Thread(target=receive_ACK, args=[sender_wait_port])
+	t1.start()
 	print("Requestor waits on IP: %s" % client_address[0])
 	print("Sender waiting on port: %s \n" % sender_wait_port)
 	if packet_type == 'R':
@@ -254,21 +254,11 @@ def main(sender_wait_port, requestor_port, packet_rate, start_seq_no, payload_le
 			with open(filename, "rb") as fd:
 				message = fd.read().decode("utf-8")
 				# Client address is combination of IP Address and port
-				global THREADS
-				# TODO Combine Receive_ACK and receive_packets
-				# TODO Can we Combine send_packets and retransmit ? 
-				# THREADS[1] = Thread(target=receive_packet)
-				# THREADS.append(Thread(target=send_packets, args=('D', client_address[0], requestor_port, start_seq_no, payload_length, packet_rate, str(message), timeout, window_size, sender_wait_port, emulator_host, emulator_port,priority)))
-				# THREADS.append(Thread(target=packet_retransmit, args=(packet_type,payload_length, packet_rate, emulator_host, emulator_port, priority, timeout)))
-				# for threads in THREADS:
-				# 	threads.start()
-				# # send_packets('D', client_address[0], requestor_port, start_seq_no, payload_length, packet_rate, str(message), timeout, window_size, sender_wait_port, emulator_host, emulator_port,priority)
-				# for threads in THREADS:
-				# 	threads.join()
 				send_packets('D', client_address[0], requestor_port, start_seq_no, payload_length, packet_rate, str(message), timeout, window_size, sender_wait_port, emulator_host, emulator_port,priority)
 		else:
 			print("File with name {} does not exist. Ending the connection.\n".format(filename))
 			send_packets('E', client_address[0], requestor_port, start_seq_no, payload_length, packet_rate, "", timeout, window_size,sender_wait_port, emulator_host, emulator_port, priority)
+	t1.join()
 
 
 if __name__ == "__main__":
