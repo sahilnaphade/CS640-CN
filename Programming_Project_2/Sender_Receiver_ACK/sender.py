@@ -38,6 +38,8 @@ def receive_request(UDP_IP, UDP_PORT):
 			else:
 				outer_header = data[0:17]
 				outer_header_up = struct.unpack("<cIhIhI", outer_header)
+				"""now the src_ip_addr is the new destination"""
+				priority, src_ip_addr, src_port, dst_ip_addr, dst_port, length = outer_header_up
 				packet_type = data[17:18].decode('utf-8')
 				header = data[18:26]
 				header = struct.unpack('<II', header)
@@ -54,7 +56,7 @@ def receive_request(UDP_IP, UDP_PORT):
 				print(f"Window length is : {packet_length}")
 				print("\n")
 				# if packet_type == 'R':
-				return packet_type, filename, addr, packet_length
+				return packet_type, filename, src_ip_addr, src_port, packet_length
 	except BlockingIOError as bie:
 		pass
 	except Exception as ex:
@@ -83,7 +85,7 @@ def receive_ACK(UDP_PORT):
 			if packet_type == 'A':
 				# header_ack = data_ack[18:26]
 				# header_ack = struct.unpack('II', header_ack)
-				# sequence_number_network_ack = header_ack[0]
+				# sequence_number_network_ack = socket.ntohl(header_ack[0])
 				sequence_number_ack = socket.ntohl(sequence_number)
 
 			if sequence_number_ack in window:
@@ -131,7 +133,7 @@ def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_numb
 						header = create_header(packet_type, sequence_number, payload_length)
 						inner_payload = header
 						# TODO Remove the hardcoded port
-						outer_header =  struct.pack("<cIhIhI", "1".encode('utf-8'), int(ipaddress.ip_address(socket.gethostbyname(socket.gethostname()))), 5000, int(ipaddress.ip_address(requester_addr)), requestor_wait_port, len(inner_payload))
+						outer_header =  struct.pack("<cIhIhI", priority.encode('utf-8'), int(ipaddress.ip_address(socket.gethostbyname(socket.gethostname()))), UDP_PORT, int(ipaddress.ip_address(requester_addr)), requestor_wait_port, len(inner_payload))
 
 						
 
@@ -163,7 +165,7 @@ def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_numb
 						time.sleep(1/rate)
 					# After the window is send, start retransmit logic until all the packets are either acknowledged or gave up
 					while window:
-						print("TRYING RETRANSMISSION!!!!!")
+						# print("TRYING RETRANSMISSION!!!!!")
 						send_times = {} # To update back the window
 						gave_up_packets = []
 						try:
@@ -171,7 +173,8 @@ def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_numb
 							window_lock.acquire()
 							for seq_no, send_info in window.items():
 								#print(f"{seq_no} in window, transmit_time is {send_info['latest_send_time']}")
-								if send_info['latest_send_time'] + timeout > time.time():
+								if time.time() > send_info['latest_send_time'] + timeout:
+									print("Packet {} latest_send_time is {}, timeout should occur at {}, current_time is {}".format(seq_no, send_info['latest_send_time'], send_info['latest_send_time'] + timeout, time.time()))
 									if send_info['transmit_attempt'] <= 5:
 										retransmit_required_packets.append((send_info['packet'], send_info['transmit_attempt']))
 									else:
@@ -250,20 +253,20 @@ def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_numb
 
 
 def main(sender_wait_port, requestor_port, packet_rate, start_seq_no, payload_length, timeout, emulator_host, emulator_port, priority):
-	packet_type, filename, client_address, window_size = receive_request(socket.gethostbyname(socket.gethostname()), sender_wait_port)
+	packet_type, filename, requestor_ip, actual_requestor_port, window_size = receive_request(socket.gethostbyname(socket.gethostname()), sender_wait_port)
 	t1 = Thread(target=receive_ACK, args=[sender_wait_port])
 	t1.start()
-	print("Requestor waits on IP: %s" % client_address[0])
+	print("Requestor waits on IP: %s" % requestor_ip)
 	print("Sender waiting on port: %s \n" % sender_wait_port)
 	if packet_type == 'R':
 		if os.path.exists(filename):
 			with open(filename, "rb") as fd:
 				message = fd.read().decode("utf-8")
 				# Client address is combination of IP Address and port
-				send_packets('D', client_address[0], requestor_port, start_seq_no, payload_length, packet_rate, str(message), timeout, window_size, sender_wait_port, emulator_host, emulator_port,priority)
+				send_packets('D', requestor_ip, actual_requestor_port, start_seq_no, payload_length, packet_rate, str(message), timeout, window_size, sender_wait_port, emulator_host, emulator_port,priority)
 		else:
 			print("File with name {} does not exist. Ending the connection.\n".format(filename))
-			send_packets('E', client_address[0], requestor_port, start_seq_no, payload_length, packet_rate, "", timeout, window_size,sender_wait_port, emulator_host, emulator_port, priority)
+			send_packets('E', requestor_ip, actual_requestor_port, start_seq_no, payload_length, packet_rate, "", timeout, window_size,sender_wait_port, emulator_host, emulator_port, priority)
 			t1.join()
 
 

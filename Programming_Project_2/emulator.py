@@ -119,14 +119,15 @@ if __name__ == "__main__":
             for entry in fwd_table:
                 if entry[0] == dest_ip and entry[1] == dest_port:
                     next_hop_host_name = entry[2]
-                    next_hop_port = entry[3]
-                    loss_prob = entry[5]
+                    next_hop_port = int(entry[3])
+                    loss_prob = float(entry[5])
                     break
             if next_hop_host_name is None:
                 LOG.error(f"ROUTE DROP - Destination Host '{dest_ip}@{dest_port}' is not in the forwarding table. Dropping the packet")
                 continue
             if packet_type != 'E':
-                if random.random() < loss_prob:
+                print(loss_prob)
+                if random.random() < float(loss_prob):
                     LOG.error(f"SEND  DROP - source: {source_ip}@{source_port} seqno: {seq_no} destination: {dest_ip}@{dest_port}")
                     continue
             send_packet(packet, next_hop_host_name, next_hop_port, log_handler=LOG)
