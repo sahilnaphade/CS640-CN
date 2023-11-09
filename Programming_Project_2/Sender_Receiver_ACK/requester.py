@@ -24,7 +24,7 @@ def send_request_ack(packet_type,Sender_IP, sender_port, filename, window,sequen
 		request_outer_header =  struct.pack("<cIhIhI", "1".encode('utf-8'), int(ipaddress.ip_address(socket.gethostbyname(socket.gethostname()))), 5000, int(ipaddress.ip_address(Sender_IP)), sender_port, int(len(request_inner_header))) # TODO Remove the hardcoded port
 
 		#sock.sendto(request_outer_header + request_inner_header + bytes(filename, 'utf-8'), (emulator_name,emulator_port))
-		sock.sendto(request_outer_header + request_inner_header + bytes(filename, 'utf-8'), (Sender_IP,sender_port))
+		sock.sendto(request_outer_header + request_inner_header + bytes(filename, 'utf-8'), ("10.141.219.248",5004))
 
 		sock.close()
 	except Exception as ex:
@@ -44,39 +44,44 @@ def receive_data(UDP_IP, UDP_PORT, filename,Sender_IP, sender_port,window, emula
 		received_data = {}
 		buffer = {}
 		timeout = 1
+		
 		while True:
 			start_time = time.time()
-			data = []
-			while time.time() - start_time < 1:
-				try:
+			#while time.time() - start_time < 1:
+			try:
+			#if data:
+				data, addr = sock.recvfrom(1024) # buffer size is 1024 bytes
+				outer_header = data[0:17]
+				outer_header_up = struct.unpack("<cIhIhI", outer_header)
+				packet_type = data[17:18].decode('utf-8')
+				header = data[18:26]
+				header = struct.unpack('II', header)
+				sequence_number_network = header[0]
+				sequence_number = socket.ntohl(sequence_number_network)
+				#packet_length = struct.unpack('!I', data[5:9])[0]
+				packet_length = header[1]
+				count = count + 1
+				length_of_payload = length_of_payload + packet_length
 
-					data, addr = sock.recvfrom(1024) # buffer size is 1024 bytes
-					outer_header = data[0:17]
-					outer_header_up = struct.unpack("<cIhIhI", outer_header)
-					packet_type = data[17:18].decode('utf-8')
-					header = data[18:26]
-					header = struct.unpack('II', header)
-					sequence_number_network = header[0]
-					sequence_number = socket.ntohl(sequence_number_network)
-					#packet_length = struct.unpack('!I', data[5:9])[0]
-					packet_length = header[1]
-					count = count + 1
-					length_of_payload = length_of_payload + packet_length
+				if count == 1 :
+					start_time = time.time()
 
-					if count == 1 :
-						start_time = time.time()
-
-					payload = data[26:].decode('utf-8')
-					
-					#payload = str(data[9:])
-					print(f"Packet Type:    {packet_type}")
-					print(f"Recv Time:      {str(datetime.datetime.now())}")
-					print(f"Sender Addr:    {addr[0]}:{addr[1]}")
-					print(f"Seq No:         {sequence_number}")
-					print(f"Length:         {packet_length}")
-					print(f"Payload:        {data[26:(26+4)].decode('utf-8')}")
-
-					if packet_type == 'D':
+				payload = data[26:].decode('utf-8')
+				
+				#payload = str(data[9:])
+				print(f"Packet Type:    {packet_type}")
+				print(f"Recv Time:      {str(datetime.datetime.now())}")
+				print(f"Sender Addr:    {addr[0]}:{addr[1]}")
+				print(f"Seq No:         {sequence_number}")
+				print(f"Length:         {packet_length}")
+				print(f"Payload:        {data[26:(26+4)].decode('utf-8')}")
+			
+			except BlockingIOError as bie:
+					pass
+				# else:
+				# 	continue
+				
+					'''if packet_type == 'D':
 						if bool(received_data) == False:
 							received_data[sequence_number] = payload
 							buffer[sequence_number] = payload
@@ -95,32 +100,34 @@ def receive_data(UDP_IP, UDP_PORT, filename,Sender_IP, sender_port,window, emula
 							
 							with open(filename, "a") as copied_file:
 								copied_file.write(payload)
-							print("\n")
+							print("\n")'''
 				
-				except BlockingIOError as bie:
-					continue		
+					
+				
+
+					# '''
+					# keycopy = tuple(buffer.keys())
+					# for seq_no in keycopy:
+						
+					# 	print("This is the ACK...")
+					# 	send_request_ack('A',Sender_IP, sender_port, filename, window,seq_no,emulator_name,emulator_port)
+					# 	buffer.pop(seq_no)
+						
+						
 			
 
 
-			keycopy = tuple(buffer.keys())
-			for seq_no in keycopy:
+					# 	if packet_type == 'E':
+					# 		end_time = time.time()
+					# 		if start_time is None:
+					# 			# case where the file does not exist on the sender
+					# 			start_time = end_time
+					# 		duration = end_time - start_time
+					# 		break '''
 				
-				print("This is the ACK...")
-				send_request_ack('A',Sender_IP, sender_port, filename, window,seq_no,emulator_name,emulator_port)
-				buffer.pop(seq_no)
 				
-				
-	
-
-
-			if packet_type == 'E':
-				end_time = time.time()
-				if start_time is None:
-					# case where the file does not exist on the sender
-					start_time = end_time
-				duration = end_time - start_time
-				break
-
+			
+			
 		print("\n\n")
 		print("="*60)
 		print("Summary of Sender")

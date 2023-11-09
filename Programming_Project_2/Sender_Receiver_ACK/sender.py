@@ -36,24 +36,25 @@ def receive_request(UDP_IP, UDP_PORT):
 			if data is None:
 				continue
 			else:
-			# outer_header = data[0:17]
-			# outer_header_up = struct.unpack("<cIhIhI", outer_header)
-			# packet_type = data[17:18].decode('utf-8')
-			# header = data[18:26]
-			# header = struct.unpack('<II', header)
-			# sequence_number_network = header[0]
-			# sequence_number = socket.ntohl(sequence_number_network)
-			# #packet_length = struct.unpack('!I', data[5:9])[0]
-				priority, src_ip_addr, src_port, dst_ip_addr, dst_port, length, packet_type, sequence_number, data = outer_payload_decapsulate(data)
+				outer_header = data[0:17]
+				outer_header_up = struct.unpack("<cIhIhI", outer_header)
+				packet_type = data[17:18].decode('utf-8')
+				header = data[18:26]
+				header = struct.unpack('<II', header)
+				sequence_number_network = header[0]
+				sequence_number = socket.ntohl(sequence_number_network)
+				packet_length = header[1]
+				# priority, src_ip_addr, src_port, dst_ip_addr, dst_port, length, packet_type, sequence_number, inner_length, data = outer_payload_decapsulate(data)
 
 
 				print("Packet type:     %s"% packet_type)
 				print("Sequence no.:    %d" % sequence_number)
-				filename = data[0:].decode('utf-8')
+				filename = data[26:].decode('utf-8')
 				print("Payload:         %s "% filename)
+				print(f"Window length is : {packet_length}")
 				print("\n")
 				# if packet_type == 'R':
-				return packet_type, filename, addr, length
+				return packet_type, filename, addr, packet_length
 	except BlockingIOError as bie:
 		pass
 	except Exception as ex:
@@ -76,7 +77,7 @@ def receive_ACK(UDP_PORT):
 		try:
 			# TODO Extract data from the new header and then old header (check receive_request) - Done
 			data_ack, addr = sock_receive.recvfrom(1024) # buffer size is 1024 bytes
-			priority, src_ip_addr, src_port, dst_ip_addr, dst_port, length, packet_type, sequence_number, data = outer_payload_decapsulate(data)
+			priority, src_ip_addr, src_port, dst_ip_addr, dst_port, length, packet_type, sequence_number, data = outer_payload_decapsulate(data_ack)
 			print(f"This is the packet type {packet_type}")
 		
 			if packet_type == 'A':
@@ -168,7 +169,7 @@ def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_numb
 							retransmit_required_packets = []
 							window_lock.acquire()
 							for seq_no, send_info in window.items():
-								print(f"{seq_no} in window, transmit_time is {send_info['latest_send_time']}")
+								#print(f"{seq_no} in window, transmit_time is {send_info['latest_send_time']}")
 								if send_info['latest_send_time'] + timeout > time.time():
 									if send_info['transmit_attempt'] <= 5:
 										retransmit_required_packets.append((send_info['packet'], send_info['transmit_attempt']))
@@ -183,7 +184,8 @@ def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_numb
 								transmit_attempt = packet_transmit_attempt[1]
 								packet_priority, src_ip, src_port, dest_ip, dest_port, length, packet_type, seq_no, data = outer_payload_decapsulate(packet)
 								print(f"Retransmitting Packet...for sequence number {seq_no} and count is {transmit_attempt+1}")
-								sock.sendto(packet, (emulator_host, emulator_port))
+								# sock.sendto(packet, (emulator_host, emulator_port))
+								sock.sendto(packet, (requester_addr, requestor_wait_port))
 								send_times[seq_no] = time.time()
 								time.sleep(1/rate)
 								# retransmission_count[seq_no] += 1
@@ -231,6 +233,7 @@ def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_numb
 
 			current_time = time.time()
 			milliseconds = int((current_time - int(current_time)) * 1000)
+			
 			print("\nEND Packet")
 			print(f"Send Time:          {time.strftime('%Y-%m-%d %H:%M:%S')}.{milliseconds:03d}")
 			print(f"Requester Addr:     {requester_addr}:{requestor_wait_port}")
@@ -258,7 +261,7 @@ def main(sender_wait_port, requestor_port, packet_rate, start_seq_no, payload_le
 		else:
 			print("File with name {} does not exist. Ending the connection.\n".format(filename))
 			send_packets('E', client_address[0], requestor_port, start_seq_no, payload_length, packet_rate, "", timeout, window_size,sender_wait_port, emulator_host, emulator_port, priority)
-	t1.join()
+			t1.join()
 
 
 if __name__ == "__main__":
