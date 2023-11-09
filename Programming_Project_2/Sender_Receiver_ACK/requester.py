@@ -6,29 +6,77 @@ import datetime
 import math
 import argparse
 import ipaddress
+from utils_640 import *
+import threading
+from threading import Lock
 
-def send_request_ack(packet_type,Sender_IP, sender_port, filename, window,sequence_number, emulator_name, emulator_port):
-	#print("Sending request to {} on port {}".format(Sender_IP, sender_port))
+THREADS = []
+received_data = {}
+received_data_lock = Lock()
+
+def send_request(packet_type,Sender_IP, sender_port, filename, emulator_name, emulator_port,priority,window):
 	try:
 		sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 		seq_no = socket.htonl(0)
-		if packet_type == 'R':
-			request_inner_header = str(packet_type).encode("utf-8") + struct.pack('II', seq_no, window)
-			print("Request sent \n")
-
-		elif packet_type == 'A':
-			print(f"ACK sent for {sequence_number} \n")
-			sequence_number = socket.htonl(sequence_number)
-			request_inner_header = str(packet_type).encode("utf-8") + struct.pack('II', sequence_number, 0)
+		request_inner_header = str(packet_type).encode("utf-8") + struct.pack('II', seq_no, window)
+		request_outer_header =  struct.pack("<cIhIhI", "1".encode('utf-8'), int(ipaddress.ip_address(socket.gethostbyname(socket.gethostname()))), 5000, int(ipaddress.ip_address(Sender_IP)), sender_port, int(len(request_inner_header)))
 		
-		request_outer_header =  struct.pack("<cIhIhI", "1".encode('utf-8'), int(ipaddress.ip_address(socket.gethostbyname(socket.gethostname()))), 5000, int(ipaddress.ip_address(Sender_IP)), sender_port, int(len(request_inner_header))) # TODO Remove the hardcoded port
-
-		#sock.sendto(request_outer_header + request_inner_header + bytes(filename, 'utf-8'), (emulator_name,emulator_port))
-		sock.sendto(request_outer_header + request_inner_header + bytes(filename, 'utf-8'), ("10.141.219.248",5004))
-
+		sock.sendto(request_outer_header + request_inner_header + bytes(filename, 'utf-8'), (Sender_IP,sender_port))
+		print(f"Request sent to the sender !!")
 		sock.close()
 	except Exception as ex:
 		raise ex
+
+
+def send_ack(Sender_IP, sender_port, emulator_name, emulator_port,priority):
+	global received_data, received_data_lock
+	try:
+		sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+		while True:
+			key_copy = tuple(received_data.keys())
+			for seq_no in key_copy:
+				packet_type = received_data[seq_no][17:18].decode('utf-8')
+				request_inner_header = 'A'.encode("utf-8") + struct.pack('II', seq_no, 0)
+				request_outer_header =  struct.pack("<cIhIhI", "1".encode('utf-8'), int(ipaddress.ip_address(socket.gethostbyname(socket.gethostname()))), 5000, int(ipaddress.ip_address(Sender_IP)), sender_port, int(len(request_inner_header)))
+				
+				sock.sendto(request_outer_header + request_inner_header + '1'.encode('utf-8'), (Sender_IP,sender_port))
+				
+				print(f"ACK sent to the sender for sequence number : {seq_no}")
+				received_data_lock.acquire()
+				received_data.pop(seq_no)
+				received_data_lock.release()
+				
+				if packet_type == 'E':
+					break
+					
+			
+	except Exception as ex:
+		raise ex
+	
+		
+
+# def send_request_ack(packet_type,Sender_IP, sender_port, filename, window,sequence_number, emulator_name, emulator_port):
+# 	#print("Sending request to {} on port {}".format(Sender_IP, sender_port))
+# 	try:
+# 		sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+# 		seq_no = socket.htonl(0)
+# 		if packet_type == 'R':
+# 			request_inner_header = str(packet_type).encode("utf-8") + struct.pack('II', seq_no, window)
+# 			print("Request sent \n")
+
+# 		elif packet_type == 'A':
+# 			print(f"ACK sent for {sequence_number} \n")
+# 			sequence_number = socket.htonl(sequence_number)
+# 			request_inner_header = str(packet_type).encode("utf-8") + struct.pack('II', sequence_number, 0)
+		
+# 		request_outer_header =  struct.pack("<cIhIhI", "1".encode('utf-8'), int(ipaddress.ip_address(socket.gethostbyname(socket.gethostname()))), 5000, int(ipaddress.ip_address(Sender_IP)), sender_port, int(len(request_inner_header))) # TODO Remove the hardcoded port
+
+# 		sock.sendto(request_outer_header + request_inner_header + bytes(filename, 'utf-8'), (emulator_name,emulator_port))
+# 		#sock.sendto(request_outer_header + request_inner_header + bytes(filename, 'utf-8'), (Sender_IP,sender_port))
+
+# 		sock.close()
+# 	except Exception as ex:
+# 		raise ex
 
 
 def receive_data(UDP_IP, UDP_PORT, filename,Sender_IP, sender_port,window, emulator_name, emulator_port):
@@ -37,19 +85,18 @@ def receive_data(UDP_IP, UDP_PORT, filename,Sender_IP, sender_port,window, emula
 							socket.SOCK_DGRAM) # UDP
 		# print("Requster waiting on IP {} @ port {}".format(UDP_IP, UDP_PORT))
 		sock.setblocking(0)
-		sock.bind(('0.0.0.0', UDP_PORT))
+		global received_data, received_data_lock
+		sock.bind(('0.0.0.0', emulator_port))
 		start_time = None
 		count = 0
 		length_of_payload = 0
-		received_data = {}
 		buffer = {}
 		timeout = 1
-		
+		data = []
 		while True:
-			start_time = time.time()
-			#while time.time() - start_time < 1:
+
 			try:
-			#if data:
+
 				data, addr = sock.recvfrom(1024) # buffer size is 1024 bytes
 				outer_header = data[0:17]
 				outer_header_up = struct.unpack("<cIhIhI", outer_header)
@@ -63,9 +110,6 @@ def receive_data(UDP_IP, UDP_PORT, filename,Sender_IP, sender_port,window, emula
 				count = count + 1
 				length_of_payload = length_of_payload + packet_length
 
-				if count == 1 :
-					start_time = time.time()
-
 				payload = data[26:].decode('utf-8')
 				
 				#payload = str(data[9:])
@@ -75,59 +119,42 @@ def receive_data(UDP_IP, UDP_PORT, filename,Sender_IP, sender_port,window, emula
 				print(f"Seq No:         {sequence_number}")
 				print(f"Length:         {packet_length}")
 				print(f"Payload:        {data[26:(26+4)].decode('utf-8')}")
+				
+				received_data_lock.acquire()
+				if packet_type == 'D':
+					if bool(received_data) == False:
+						received_data[sequence_number] = data
+						buffer[sequence_number] = data
+						
+						with open(filename, "a") as copied_file:
+							copied_file.write(payload)
+						print("\n")
+					elif sequence_number in buffer:
+						received_data[sequence_number] = data
+					else:
+						received_data[sequence_number] = data
+						buffer[sequence_number] = data
+						
+						with open(filename, "a") as copied_file:
+							copied_file.write(payload)
+						print("\n")
+				received_data_lock.release()
 			
+				
+				
+	
+
+
+				if packet_type == 'E':
+					end_time = time.time()
+					if start_time is None:
+						# case where the file does not exist on the sender
+						start_time = end_time
+					duration = end_time - start_time
+					break
 			except BlockingIOError as bie:
-					pass
-				# else:
-				# 	continue
-				
-					'''if packet_type == 'D':
-						if bool(received_data) == False:
-							received_data[sequence_number] = payload
-							buffer[sequence_number] = payload
-							
-							with open(filename, "a") as copied_file:
-								copied_file.write(payload)
-							print("\n")
-						elif sequence_number in received_data:
-							buffer[sequence_number] = payload
-						else:
-							if len(received_data) == math.floor(window/2):
-								timeout = (time.time() - start_time)*2
-								print(f"This is the new timeout : {timeout}\n\n\n")
-							received_data[sequence_number] = payload
-							buffer[sequence_number] = payload
-							
-							with open(filename, "a") as copied_file:
-								copied_file.write(payload)
-							print("\n")'''
-				
-					
-				
+				pass
 
-					# '''
-					# keycopy = tuple(buffer.keys())
-					# for seq_no in keycopy:
-						
-					# 	print("This is the ACK...")
-					# 	send_request_ack('A',Sender_IP, sender_port, filename, window,seq_no,emulator_name,emulator_port)
-					# 	buffer.pop(seq_no)
-						
-						
-			
-
-
-					# 	if packet_type == 'E':
-					# 		end_time = time.time()
-					# 		if start_time is None:
-					# 			# case where the file does not exist on the sender
-					# 			start_time = end_time
-					# 		duration = end_time - start_time
-					# 		break '''
-				
-				
-			
-			
 		print("\n\n")
 		print("="*60)
 		print("Summary of Sender")
@@ -156,8 +183,12 @@ def main(waiting_port, file_to_request, window, emulator_host, emulator_port):
 		tracker_data.sort(key=lambda x: (x[0], x[1]))
 		for filtered_host_info in tracker_data:
 			# print(f"Requesting file: {filtered_host_info[0]} Chunk ID: {filtered_host_info[1]} from Host {filtered_host_info[2]} {(socket.gethostbyname(filtered_host_info[2]))} @ port {filtered_host_info[3]}")
-			send_request_ack('R',socket.gethostbyname(filtered_host_info[2]), filtered_host_info[3], file_to_request, window,1, emulator_host, emulator_port)
+			send_thread = threading.Thread(target=send_ack,args=(socket.gethostbyname(filtered_host_info[2]), filtered_host_info[3], emulator_host, emulator_port, 1))
+			send_thread.start()
+			send_request('R',socket.gethostbyname(filtered_host_info[2]), filtered_host_info[3], file_to_request, emulator_host, emulator_port, 1, window)
 			receive_data(socket.gethostbyname(socket.gethostname()), waiting_port, file_to_request,socket.gethostbyname(filtered_host_info[2]), filtered_host_info[3],window, emulator_host, emulator_port)
+			
+			
 	else:
 		raise Exception("Tracker file does not exist.")
 
