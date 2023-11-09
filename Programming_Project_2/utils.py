@@ -57,7 +57,7 @@ def outer_payload_metadata(packet):
 
 def outer_payload_decapsulate(packet):
     outer_header = packet[0:17]
-    outer_header_unpacked = struct.unpack("cIhIhI", outer_header)
+    outer_header_unpacked = struct.unpack("<cIhIhI", outer_header)
     priority, src_ip_int, src_port, dst_ip_int, dst_port, length = outer_header
 
     src_ip_addr = ipaddress.ip_address(src_ip_int)

@@ -32,7 +32,7 @@ def inner_payload_encapsulate(packet_type, packet_seq_no, payload, payload_lengt
 def outer_payload_encapsulate(priority, src_ip_addr, src_port, dest_ip_addr, dest_port, inner_payload):
     src_ip_int = ipaddress.v4_int_to_packed(src_ip_addr)
     dst_ip_int = ipaddress.v4_int_to_packed(dest_ip_addr)
-    outer_header = struct.pack("cIhIhI", str(priority).encode('utf-8'), src_ip_int, src_port, dst_ip_int, dest_port, len(inner_payload))
+    outer_header = struct.pack("<cIhIhI", str(priority).encode('utf-8'), src_ip_int, src_port, dst_ip_int, dest_port, len(inner_payload))
     return outer_header + inner_payload
 
 def inner_payload_decapsulate(inner_packet):
@@ -58,6 +58,7 @@ def outer_payload_metadata(packet):
 def outer_payload_decapsulate(packet):
     outer_header = packet[0:17]
     outer_header_unpacked = struct.unpack("<cIhIhI", outer_header)
+    print(len(outer_header_unpacked))
     priority, src_ip_int, src_port, dst_ip_int, dst_port, length = outer_header_unpacked
 
     src_ip_addr = ipaddress.ip_address(src_ip_int)
