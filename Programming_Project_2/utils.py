@@ -50,8 +50,8 @@ def outer_payload_metadata(packet):
     outer_header_unpacked = struct.unpack("<cIhIhI", outer_header)
     priority, src_ip_int, src_port, dst_ip_int, dst_port, length = outer_header_unpacked
 
-    src_ip_addr = ipaddress.ip_address(src_ip_int)
-    dst_ip_addr = ipaddress.ip_address(dst_ip_int)
+    src_ip_addr = str(ipaddress.ip_address(src_ip_int))
+    dst_ip_addr = str(ipaddress.ip_address(dst_ip_int))
     return priority, src_ip_addr, src_port, dst_ip_addr, dst_port, length
 
 
@@ -60,10 +60,10 @@ def outer_payload_decapsulate(packet):
     outer_header_unpacked = struct.unpack("<cIhIhI", outer_header)
     priority, src_ip_int, src_port, dst_ip_int, dst_port, length = outer_header_unpacked
 
-    src_ip_addr = ipaddress.ip_address(src_ip_int)
-    dst_ip_addr = ipaddress.ip_address(dst_ip_int)
+    src_ip_addr = str(ipaddress.ip_address(src_ip_int))
+    dst_ip_addr = str(ipaddress.ip_address(dst_ip_int))
     
     packet_type, sequence_number, data = inner_payload_decapsulate(packet[17:])
     
-    return priority, src_ip_addr, src_port, dst_ip_addr, dst_port, length, packet_type, sequence_number, data
+    return str(priority), src_ip_addr, src_port, dst_ip_addr, dst_port, length, packet_type, sequence_number, data
 

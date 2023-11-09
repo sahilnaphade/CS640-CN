@@ -15,6 +15,8 @@ retransmission_count = {}
 transmit_count = 0
 THREADS = []
 
+class killThreadException(Exception):
+	pass
 
 # TODO Combine the logic of both receive request and receive ACK
 """Receives request from the Requester for the filename (from which data is to be sent)"""
@@ -88,11 +90,13 @@ def receive_ACK(UDP_PORT):
 				# sequence_number_network_ack = socket.ntohl(header_ack[0])
 				sequence_number_ack = socket.ntohl(sequence_number)
 
-			if sequence_number_ack in window:
-				print(f"Received ACK for sequence_number : {sequence_number_ack}")
-				window_lock.acquire()
-				window.pop(sequence_number_ack)
-				window_lock.release()
+				if sequence_number_ack in window:
+					print(f"Received ACK for sequence_number : {sequence_number_ack}")
+					window_lock.acquire()
+					window.pop(sequence_number_ack)
+					window_lock.release()
+			else:
+				pass
 		
 		except BlockingIOError as bie:
 			continue
@@ -133,7 +137,7 @@ def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_numb
 						header = create_header(packet_type, sequence_number, payload_length)
 						inner_payload = header
 						# TODO Remove the hardcoded port
-						outer_header =  struct.pack("<cIhIhI", priority.encode('utf-8'), int(ipaddress.ip_address(socket.gethostbyname(socket.gethostname()))), UDP_PORT, int(ipaddress.ip_address(requester_addr)), requestor_wait_port, len(inner_payload))
+						outer_header =  struct.pack("<cIhIhI", str(priority).encode('utf-8'), int(ipaddress.ip_address(socket.gethostbyname(socket.gethostname()))), UDP_PORT, int(ipaddress.ip_address(requester_addr)), requestor_wait_port, len(inner_payload))
 
 						
 
@@ -141,7 +145,7 @@ def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_numb
 						packet = outer_header + inner_payload + n.encode("utf-8")
 						# sock.sendto((packet),
 						# (requester_addr, requestor_wait_port))
-						sock.sendto((outer_header + inner_payload),(emulator_host, emulator_port))
+						sock.sendto(packet, (emulator_host, emulator_port))
 
 						print(f"Sending Packet... with sequence number : {sequence_number}")
 
@@ -174,7 +178,6 @@ def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_numb
 							for seq_no, send_info in window.items():
 								#print(f"{seq_no} in window, transmit_time is {send_info['latest_send_time']}")
 								if time.time() > send_info['latest_send_time'] + timeout:
-									print("Packet {} latest_send_time is {}, timeout should occur at {}, current_time is {}".format(seq_no, send_info['latest_send_time'], send_info['latest_send_time'] + timeout, time.time()))
 									if send_info['transmit_attempt'] <= 5:
 										retransmit_required_packets.append((send_info['packet'], send_info['transmit_attempt']))
 									else:
@@ -247,7 +250,9 @@ def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_numb
 			print(f"Length:             {0}")
 			print(f"Payload:            {0}")
 			print("\n")
-			break
+			raise killThreadException
+		except killThreadException as kte:
+			raise kte
 		except Exception as ex:
 			raise ex
 
@@ -267,7 +272,7 @@ def main(sender_wait_port, requestor_port, packet_rate, start_seq_no, payload_le
 		else:
 			print("File with name {} does not exist. Ending the connection.\n".format(filename))
 			send_packets('E', requestor_ip, actual_requestor_port, start_seq_no, payload_length, packet_rate, "", timeout, window_size,sender_wait_port, emulator_host, emulator_port, priority)
-			t1.join()
+	t1.join()
 
 
 if __name__ == "__main__":
