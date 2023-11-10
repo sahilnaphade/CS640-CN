@@ -41,9 +41,11 @@ def send_ack(Sender_IP, sender_port, emulator_name, emulator_port,priority, wait
 		sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 		while True:
 			key_copy = tuple(received_data.keys())
-			for seq_no in sorted(key_copy):
-				packet_type = received_data[seq_no][17:18].decode('utf-8')
-				request_inner_header = 'A'.encode("utf-8") + struct.pack('II', seq_no, 0)
+			for check_tuple in sorted(key_copy):
+				if not (check_tuple[0] == Sender_IP and check_tuple[1] == sender_port):
+					return
+				packet_type = received_data[check_tuple][17:18].decode('utf-8')
+				request_inner_header = 'A'.encode("utf-8") + struct.pack('II', check_tuple[2], 0)
 				request_outer_header =  struct.pack("<cIhIhI",
 											str(priority).encode('utf-8'),
 											int(ipaddress.ip_address(socket.gethostbyname(socket.gethostname()))), waiting_port,
@@ -53,9 +55,10 @@ def send_ack(Sender_IP, sender_port, emulator_name, emulator_port,priority, wait
 				
 				sock.sendto(request_outer_header + request_inner_header + '1'.encode('utf-8'), (emulator_name,emulator_port))
 				
-				print(f"ACK sent to the sender for sequence number : {seq_no}")
+				print(f"ACK sent to the sender for sequence number : {check_tuple}")
 				received_data_lock.acquire()
-				received_data.pop(seq_no)
+				if check_tuple in received_data:
+					received_data.pop(check_tuple)
 				received_data_lock.release()
 				
 				if packet_type == 'E':
@@ -91,6 +94,8 @@ def receive_data(UDP_IP, UDP_PORT, filename,Sender_IP, sender_port,window, emula
 				data, addr = sock.recvfrom(1024) # buffer size is 1024 bytes
 				outer_header = data[0:17]
 				outer_header_up = struct.unpack("<cIhIhI", outer_header)
+				actual_sender_ip = str(ipaddress.ip_address(outer_header_up[3]))
+				actual_sender_port = outer_header_up[4]
 				packet_type = data[17:18].decode('utf-8')
 				header = data[18:26]
 				header = struct.unpack('II', header)
@@ -112,19 +117,20 @@ def receive_data(UDP_IP, UDP_PORT, filename,Sender_IP, sender_port,window, emula
 				print(f"Payload:        {data[26:(26+4)].decode('utf-8')}")
 				
 				received_data_lock.acquire()
+				key_tuple = (actual_sender_ip, actual_sender_port, sequence_number)
 				if packet_type == 'D':
 					if bool(received_data) == False:
-						received_data[sequence_number] = data
-						buffer[sequence_number] = data
+						received_data[key_tuple] = data
+						buffer[key_tuple] = data
 						
 						with open(filename, "a") as copied_file:
 							copied_file.write(payload)
 						print("\n")
-					elif sequence_number in buffer:
-						received_data[sequence_number] = data
+					elif key_tuple in buffer:
+						received_data[key_tuple] = data
 					else:
-						received_data[sequence_number] = data
-						buffer[sequence_number] = data
+						received_data[key_tuple] = data
+						buffer[key_tuple] = data
 						
 						with open(filename, "a") as copied_file:
 							copied_file.write(payload)
