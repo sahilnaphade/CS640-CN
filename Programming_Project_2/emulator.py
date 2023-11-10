@@ -7,6 +7,30 @@ import random
 import ipaddress
 from io import BlockingIOError
 from utils import *
+from threading import Event, Thread
+
+packet_is_being_delayed = False
+
+def delay_and_send(packet, delay, next_hop_IP, next_hop_port, seq_no, source_ip, source_port, dest_ip, dest_port):
+    global packet_is_being_delayed
+    try:
+        packet_is_being_delayed = True
+        delay_event = Event()
+        delay_event.wait(delay)
+        if next_hop_IP is None:
+            LOG.error(f"ROUTE DROP - Destination Host '{dest_ip}@{dest_port}' is not in the forwarding table. Dropping the packet")
+            return
+        if packet_type != 'E':
+            print(loss_prob)
+            if random.random() < float(loss_prob):
+                LOG.error(f"SEND  DROP - source: {source_ip}@{source_port} seqno: {seq_no} destination: {dest_ip}@{dest_port}")
+                return
+        send_packet(packet, next_hop_IP, next_hop_port, log_handler=LOG)
+        return
+    except Exception as ex:
+        raise ex
+    finally:
+        packet_is_being_delayed = False
 
 if __name__ == "__main__":
     # 1. Parse arguments
@@ -43,7 +67,7 @@ if __name__ == "__main__":
                 if (emulator_name == self_ip or emulator_name == self_name) and int(emulator_port) == args.port:
                     dest_host_ip = socket.gethostbyname(dest_host_name)
                     next_hop_ip = socket.gethostbyname(next_hop_host_name)
-                    fwd_table.append(tuple([dest_host_ip, int(dest_port), next_hop_ip, int(next_hop_port), int(delay), int(loss_prob)/100]))
+                    fwd_table.append(tuple([dest_host_ip, int(dest_port), next_hop_ip, int(next_hop_port), float(int(delay)/1000), int(loss_prob)/100]))
     LOG.info(fwd_table)
 
     priority_1_queue = PriorityQueue(maxsize=args.queue_size)
@@ -91,64 +115,55 @@ if __name__ == "__main__":
                     continue
                 priority_3_queue.put(data)
             pass
-        # The packets are received. Now try to transmit if any
-        # Pop the first item from the priority queue
-        packet = None
-        try:
-            packet = priority_1_queue.get(block=False, timeout=0)
-        except Empty as em:
-            LOG.debug("No message found")
+        # The packets are received. Now check if any packet is being delayed
+        # If not, try to transmit a new packet
+        if not packet_is_being_delayed:
+            # Pop the first item from the priority queue
             packet = None
-            pass
-        # If there are no 1 priority elements, get priority 2 elements
-        if packet is None:
             try:
-                packet = priority_2_queue.get(block=False, timeout=0)
+                packet = priority_1_queue.get(block=False, timeout=0)
             except Empty as em:
+                LOG.debug("No message found")
                 packet = None
                 pass
-        # If there are no 2 priority elements, get priority 3 elements
-        if packet is None:
-            try:
-                packet = priority_3_queue.get(block=False, timeout=0)
-            except Empty as em:
-                packet = None
-                pass
-        if packet is None:
-            LOG.debug("No messages in any priority queue")
-            continue
-        else:
-            priority, source_ip, source_port, dest_ip, dest_port, length, packet_type, seq_no, data = outer_payload_decapsulate(packet)
-            print(f"Emulator - Trying sending the packet from {source_ip}@{source_port} to {dest_ip}@{dest_port} with priority {priority} seq_no {seq_no}")
-            print(type(dest_ip))
-            print(type(dest_port))
-            print(fwd_table)
-            next_hop_host_name = next_hop_port = None
-            for entry in fwd_table:
-                print("Reading the entry {}".format(entry))
-                print(type(entry[0]))
-                print(type(entry[1]))
-                if entry[0] == dest_ip and entry[1] == dest_port:
-                    next_hop_host_name = entry[2]
-                    next_hop_port = int(entry[3])
-                    loss_prob = float(entry[5])
-                    print(f"{next_hop_host_name}@{next_hop_port}")
-                    break
-            if next_hop_host_name is None:
-                LOG.error(f"ROUTE DROP - Destination Host '{dest_ip}@{dest_port}' is not in the forwarding table. Dropping the packet")
+            # If there are no 1 priority elements, get priority 2 elements
+            if packet is None:
+                try:
+                    packet = priority_2_queue.get(block=False, timeout=0)
+                except Empty as em:
+                    packet = None
+                    pass
+            # If there are no 2 priority elements, get priority 3 elements
+            if packet is None:
+                try:
+                    packet = priority_3_queue.get(block=False, timeout=0)
+                except Empty as em:
+                    packet = None
+                    pass
+            if packet is None:
+                LOG.debug("No messages in any priority queue")
                 continue
-            if packet_type != 'E':
-                print(loss_prob)
-                if random.random() < float(loss_prob):
-                    LOG.error(f"SEND  DROP - source: {source_ip}@{source_port} seqno: {seq_no} destination: {dest_ip}@{dest_port}")
-                    continue
-            send_packet(packet, next_hop_host_name, next_hop_port, log_handler=LOG)
-            print(f"The destination is {dest_ip}@{dest_port} next hop is {next_hop_host_name}@{next_hop_port}")
-            # send_socket = None
-            # try:
-            #     if not send_socket:
-            #         send_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            #     send_socket.sendto((packet), (next_hop_host_name, int(next_hop_port)))
-            # except Exception as ex:
-            #     raise ex
-            pass
+            else:
+                priority, source_ip, source_port, dest_ip, dest_port, length, packet_type, seq_no, data = outer_payload_decapsulate(packet)
+                # print(f"Emulator - Trying sending the packet from {source_ip}@{source_port} to {dest_ip}@{dest_port} with priority {priority} seq_no {seq_no}")
+                # print(type(dest_ip))
+                # print(type(dest_port))
+                # print(fwd_table)
+                next_hop_host_name = next_hop_port = None
+                for entry in fwd_table:
+                    # print("Reading the entry {}".format(entry))
+                    # print(type(entry[0]))
+                    # print(type(entry[1]))
+                    if entry[0] == dest_ip and entry[1] == dest_port:
+                        next_hop_host_name = entry[2]
+                        next_hop_port = int(entry[3])
+                        delay = entry[4]
+                        loss_prob = float(entry[5])
+                        # print(f"{next_hop_host_name}@{next_hop_port}")
+                        break
+                t1 = Thread(target=delay_and_send, args=[packet, delay, next_hop_host_name, next_hop_port, seq_no, source_ip, source_port, dest_ip, dest_port])
+                t1.start()
+                continue
+        else:
+            continue
+

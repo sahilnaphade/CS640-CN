@@ -65,5 +65,5 @@ def outer_payload_decapsulate(packet):
     
     packet_type, sequence_number, data = inner_payload_decapsulate(packet[17:])
     
-    return str(priority), src_ip_addr, src_port, dst_ip_addr, dst_port, length, packet_type, sequence_number, data
+    return priority.decode('utf-8'), src_ip_addr, src_port, dst_ip_addr, dst_port, length, packet_type, sequence_number, data
 

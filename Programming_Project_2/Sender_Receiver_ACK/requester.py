@@ -30,11 +30,13 @@ def send_request(packet_type,Sender_IP, sender_port, filename, emulator_name, em
 
 def send_ack(Sender_IP, sender_port, emulator_name, emulator_port,priority):
 	global received_data, received_data_lock
+	end_received = False
+	sock = None
 	try:
 		sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 		while True:
 			key_copy = tuple(received_data.keys())
-			for seq_no in key_copy:
+			for seq_no in sorted(key_copy):
 				packet_type = received_data[seq_no][17:18].decode('utf-8')
 				request_inner_header = 'A'.encode("utf-8") + struct.pack('II', seq_no, 0)
 				request_outer_header =  struct.pack("<cIhIhI", "1".encode('utf-8'), int(ipaddress.ip_address(socket.gethostbyname(socket.gethostname()))), 5000, int(ipaddress.ip_address(Sender_IP)), sender_port, int(len(request_inner_header)))
@@ -47,11 +49,15 @@ def send_ack(Sender_IP, sender_port, emulator_name, emulator_port,priority):
 				received_data_lock.release()
 				
 				if packet_type == 'E':
-					break
-					
-			
+					end_received = True
+			if end_received:
+				# print("SAHIL!! THE DATA END RECEIVED!!!!! \n Returning from the thread")
+				return
 	except Exception as ex:
 		raise ex
+	finally:
+		if sock:
+			sock.close()
 	
 		
 
@@ -139,12 +145,6 @@ def receive_data(UDP_IP, UDP_PORT, filename,Sender_IP, sender_port,window, emula
 							copied_file.write(payload)
 						print("\n")
 				received_data_lock.release()
-			
-				
-				
-	
-
-
 				if packet_type == 'E':
 					end_time = time.time()
 					if start_time is None:
@@ -172,6 +172,7 @@ def receive_data(UDP_IP, UDP_PORT, filename,Sender_IP, sender_port,window, emula
 
 def main(waiting_port, file_to_request, window, emulator_host, emulator_port):
 	tracker_data = []
+	threads = []
 	if os.path.exists("tracker.txt"):
 		with open("tracker.txt", "r") as tracker_file:
 			trackings = tracker_file.readlines()
@@ -183,12 +184,11 @@ def main(waiting_port, file_to_request, window, emulator_host, emulator_port):
 		tracker_data.sort(key=lambda x: (x[0], x[1]))
 		for filtered_host_info in tracker_data:
 			# print(f"Requesting file: {filtered_host_info[0]} Chunk ID: {filtered_host_info[1]} from Host {filtered_host_info[2]} {(socket.gethostbyname(filtered_host_info[2]))} @ port {filtered_host_info[3]}")
-			send_thread = threading.Thread(target=send_ack,args=(socket.gethostbyname(filtered_host_info[2]), filtered_host_info[3], emulator_host, emulator_port, 1))
+			send_thread = threading.Thread(target=send_ack, daemon=True, args=(socket.gethostbyname(filtered_host_info[2]), filtered_host_info[3], emulator_host, emulator_port, 1))
 			send_thread.start()
+			threads.append(send_thread)
 			send_request('R',socket.gethostbyname(filtered_host_info[2]), filtered_host_info[3], file_to_request, emulator_host, emulator_port, 1, window, waiting_port)
 			receive_data(socket.gethostbyname(socket.gethostname()), waiting_port, file_to_request,socket.gethostbyname(filtered_host_info[2]), filtered_host_info[3],window, emulator_host, emulator_port)
-			
-			
 	else:
 		raise Exception("Tracker file does not exist.")
 

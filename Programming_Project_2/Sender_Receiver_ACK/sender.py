@@ -8,15 +8,14 @@ import argparse
 import ipaddress
 from threading import Thread, Lock
 
+# TODO Check the correct priority queues and if it is correct or not
+ 
 # We can keep entire packet in memory in some data structure -> that way we dont need to get the requester info again and again
 window_lock = Lock()
 window = {}
-retransmission_count = {}
 transmit_count = 0
 THREADS = []
-
-class killThreadException(Exception):
-	pass
+send_done = False
 
 # TODO Combine the logic of both receive request and receive ACK
 """Receives request from the Requester for the filename (from which data is to be sent)"""
@@ -70,7 +69,7 @@ def receive_request(UDP_IP, UDP_PORT):
 
 def receive_ACK(UDP_PORT):
 	start_time = time.time()
-	global window, window_lock
+	global window, window_lock, send_done
 	sock_receive = socket.socket(socket.AF_INET, # Internet
 			socket.SOCK_DGRAM)
 	
@@ -78,8 +77,14 @@ def receive_ACK(UDP_PORT):
 	sock_receive.bind(('0.0.0.0', UDP_PORT))
 
 	while True:
+		window_empty = False
+		window_lock.acquire()
+		if not window:
+			window_empty = True
+		window_lock.release()
+		if send_done and window_empty:
+			return
 		try:
-			# TODO Extract data from the new header and then old header (check receive_request) - Done
 			data_ack, addr = sock_receive.recvfrom(1024) # buffer size is 1024 bytes
 			priority, src_ip_addr, src_port, dst_ip_addr, dst_port, length, packet_type, sequence_number, data = outer_payload_decapsulate(data_ack)
 			print(f"This is the packet type {packet_type}")
@@ -116,7 +121,7 @@ def create_header(packet_type, sequence_number, payload_length):
 
 
 def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_number, payload_length, rate, message, timeout, window_size, UDP_PORT, emulator_host, emulator_port,priority):
-	global window, window_lock
+	global window, window_lock, send_done
 	global transmit_count
 	sock = socket.socket(socket.AF_INET, # Internet
 				socket.SOCK_DGRAM) # UDP
@@ -196,21 +201,6 @@ def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_numb
 								
 								send_times[seq_no] = time.time()
 								time.sleep(1/rate)
-								# retransmission_count[seq_no] += 1
-								# if retransmission_count[seq_no] < 6:
-
-								# 	header = create_header(packet_type, seq_no, payload_length)
-								# 	# TODO Create and add new header in front of old header
-								# 	inner_payload = header + window[seq_no].encode("utf-8")
-								# 			# TODO Remove the hardcoded port
-								# 	outer_header =  struct.pack("<cIhIhI", "1".encode('utf-8'), int(ipaddress.ip_address(socket.gethostbyname(socket.gethostname()))), 5000, int(ipaddress.ip_address(requester_addr)), requestor_wait_port, len(inner_payload))
-
-								# 	#sock.sendto((outer_header + inner_payload),
-								# 	#		(emulator_host, emulator_port))
-									
-									# sock.sendto((outer_header + inner_payload),
-									# 		(requester_addr, requestor_wait_port))
-
 							# Update the global window to be used in other logics
 							window_lock.acquire()
 							for seq_no, send_time in send_times.items():
@@ -250,16 +240,15 @@ def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_numb
 			print(f"Length:             {0}")
 			print(f"Payload:            {0}")
 			print("\n")
-			raise killThreadException
-		except killThreadException as kte:
-			raise kte
+			send_done = True
+			return
 		except Exception as ex:
 			raise ex
 
 
 def main(sender_wait_port, requestor_port, packet_rate, start_seq_no, payload_length, timeout, emulator_host, emulator_port, priority):
 	packet_type, filename, requestor_ip, actual_requestor_port, window_size = receive_request(socket.gethostbyname(socket.gethostname()), sender_wait_port)
-	t1 = Thread(target=receive_ACK, args=[sender_wait_port])
+	t1 = Thread(target=receive_ACK, args=[sender_wait_port], daemon=True)
 	t1.start()
 	print("Requestor waits on IP: %s" % requestor_ip)
 	print("Sender waiting on port: %s \n" % sender_wait_port)
@@ -273,6 +262,7 @@ def main(sender_wait_port, requestor_port, packet_rate, start_seq_no, payload_le
 			print("File with name {} does not exist. Ending the connection.\n".format(filename))
 			send_packets('E', requestor_ip, actual_requestor_port, start_seq_no, payload_length, packet_rate, "", timeout, window_size,sender_wait_port, emulator_host, emulator_port, priority)
 	t1.join()
+	exit(0)
 
 
 if __name__ == "__main__":
