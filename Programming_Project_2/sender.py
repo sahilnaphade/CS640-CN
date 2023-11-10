@@ -46,7 +46,6 @@ def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_numb
 	try:
 		sock = socket.socket(socket.AF_INET, # Internet
 						socket.SOCK_DGRAM) # UDP
-		# sock.bind((requester_addr, 5000))
 		if packet_type == "D" and message != "":
 			chunks = [message[i:i + payload_length] for i in range(0, len(message), payload_length)]
 

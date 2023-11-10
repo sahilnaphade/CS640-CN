@@ -20,7 +20,12 @@ def send_request(packet_type,Sender_IP, sender_port, filename, emulator_name, em
 		seq_no = socket.htonl(0)
 		request_inner_header = str(packet_type).encode("utf-8") + struct.pack('II', seq_no, window)
 		#request_outer_header =  struct.pack("<cIhIhI", "1".encode('utf-8'), int(ipaddress.ip_address(socket.gethostbyname(socket.gethostname()))), waiting_port, int(ipaddress.ip_address(Sender_IP)), sender_port, int(len(request_inner_header)))
-		request_outer_header =  struct.pack("<cIhIhI", "1".encode('utf-8'), int(ipaddress.ip_address("10.141.215.235")), waiting_port, int(ipaddress.ip_address(Sender_IP)), sender_port, int(len(request_inner_header)))
+		request_outer_header =  struct.pack("<cIhIhI",
+									  "1".encode('utf-8'),
+									  int(ipaddress.ip_address(socket.gethostbyname(socket.gethostname()))), waiting_port,
+									  int(ipaddress.ip_address(Sender_IP)),
+									  sender_port,
+									  int(len(request_inner_header)))
 		sock.sendto(request_outer_header + request_inner_header + bytes(filename, 'utf-8'), (emulator_name,emulator_port))
 		print(f"Request sent to the sender !!")
 		sock.close()
@@ -28,7 +33,7 @@ def send_request(packet_type,Sender_IP, sender_port, filename, emulator_name, em
 		raise ex
 
 
-def send_ack(Sender_IP, sender_port, emulator_name, emulator_port,priority):
+def send_ack(Sender_IP, sender_port, emulator_name, emulator_port,priority, waiting_port):
 	global received_data, received_data_lock
 	end_received = False
 	sock = None
@@ -39,7 +44,12 @@ def send_ack(Sender_IP, sender_port, emulator_name, emulator_port,priority):
 			for seq_no in sorted(key_copy):
 				packet_type = received_data[seq_no][17:18].decode('utf-8')
 				request_inner_header = 'A'.encode("utf-8") + struct.pack('II', seq_no, 0)
-				request_outer_header =  struct.pack("<cIhIhI", "1".encode('utf-8'), int(ipaddress.ip_address(socket.gethostbyname(socket.gethostname()))), 5000, int(ipaddress.ip_address(Sender_IP)), sender_port, int(len(request_inner_header)))
+				request_outer_header =  struct.pack("<cIhIhI",
+											str(priority).encode('utf-8'),
+											int(ipaddress.ip_address(socket.gethostbyname(socket.gethostname()))), waiting_port,
+											int(ipaddress.ip_address(Sender_IP)), sender_port,
+											int(len(request_inner_header))
+										)
 				
 				sock.sendto(request_outer_header + request_inner_header + '1'.encode('utf-8'), (emulator_name,emulator_port))
 				
@@ -58,31 +68,6 @@ def send_ack(Sender_IP, sender_port, emulator_name, emulator_port,priority):
 	finally:
 		if sock:
 			sock.close()
-	
-		
-
-# def send_request_ack(packet_type,Sender_IP, sender_port, filename, window,sequence_number, emulator_name, emulator_port):
-# 	#print("Sending request to {} on port {}".format(Sender_IP, sender_port))
-# 	try:
-# 		sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-# 		seq_no = socket.htonl(0)
-# 		if packet_type == 'R':
-# 			request_inner_header = str(packet_type).encode("utf-8") + struct.pack('II', seq_no, window)
-# 			print("Request sent \n")
-
-# 		elif packet_type == 'A':
-# 			print(f"ACK sent for {sequence_number} \n")
-# 			sequence_number = socket.htonl(sequence_number)
-# 			request_inner_header = str(packet_type).encode("utf-8") + struct.pack('II', sequence_number, 0)
-		
-# 		request_outer_header =  struct.pack("<cIhIhI", "1".encode('utf-8'), int(ipaddress.ip_address(socket.gethostbyname(socket.gethostname()))), 5000, int(ipaddress.ip_address(Sender_IP)), sender_port, int(len(request_inner_header))) # TODO Remove the hardcoded port
-
-# 		sock.sendto(request_outer_header + request_inner_header + bytes(filename, 'utf-8'), (emulator_name,emulator_port))
-# 		#sock.sendto(request_outer_header + request_inner_header + bytes(filename, 'utf-8'), (Sender_IP,sender_port))
-
-# 		sock.close()
-# 	except Exception as ex:
-# 		raise ex
 
 
 def receive_data(UDP_IP, UDP_PORT, filename,Sender_IP, sender_port,window, emulator_name, emulator_port):
@@ -184,7 +169,7 @@ def main(waiting_port, file_to_request, window, emulator_host, emulator_port):
 		tracker_data.sort(key=lambda x: (x[0], x[1]))
 		for filtered_host_info in tracker_data:
 			# print(f"Requesting file: {filtered_host_info[0]} Chunk ID: {filtered_host_info[1]} from Host {filtered_host_info[2]} {(socket.gethostbyname(filtered_host_info[2]))} @ port {filtered_host_info[3]}")
-			send_thread = threading.Thread(target=send_ack, daemon=True, args=(socket.gethostbyname(filtered_host_info[2]), filtered_host_info[3], emulator_host, emulator_port, 1))
+			send_thread = threading.Thread(target=send_ack, daemon=True, args=(socket.gethostbyname(filtered_host_info[2]), filtered_host_info[3], emulator_host, emulator_port, 1, waiting_port))
 			send_thread.start()
 			threads.append(send_thread)
 			send_request('R',socket.gethostbyname(filtered_host_info[2]), filtered_host_info[3], file_to_request, emulator_host, emulator_port, 1, window, waiting_port)
