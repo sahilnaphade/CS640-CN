@@ -40,8 +40,10 @@ def send_ack(Sender_IP, sender_port, emulator_name, emulator_port,priority, wait
 	try:
 		sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 		while True:
+			
 			key_copy = tuple(received_data.keys())
 			for check_tuple in sorted(key_copy):
+				
 				if not (check_tuple[0] == Sender_IP and check_tuple[1] == sender_port):
 					return
 				packet_type = received_data[check_tuple][17:18].decode('utf-8')
@@ -87,6 +89,7 @@ def receive_data(UDP_IP, UDP_PORT, filename,Sender_IP, sender_port,window, emula
 		buffer = {}
 		timeout = 1
 		data = []
+		payload_data = {}
 		while True:
 
 			try:
@@ -94,55 +97,59 @@ def receive_data(UDP_IP, UDP_PORT, filename,Sender_IP, sender_port,window, emula
 				data, addr = sock.recvfrom(1024) # buffer size is 1024 bytes
 				outer_header = data[0:17]
 				outer_header_up = struct.unpack("<cIhIhI", outer_header)
-				actual_sender_ip = str(ipaddress.ip_address(outer_header_up[3]))
-				actual_sender_port = outer_header_up[4]
-				packet_type = data[17:18].decode('utf-8')
-				header = data[18:26]
-				header = struct.unpack('II', header)
-				sequence_number_network = header[0]
-				sequence_number = socket.ntohl(sequence_number_network)
-				#packet_length = struct.unpack('!I', data[5:9])[0]
-				packet_length = header[1]
-				count = count + 1
-				length_of_payload = length_of_payload + packet_length
-
-				payload = data[26:].decode('utf-8')
 				
-				#payload = str(data[9:])
-				print(f"Packet Type:    {packet_type}")
-				print(f"Recv Time:      {str(datetime.datetime.now())}")
-				print(f"Sender Addr:    {addr[0]}:{addr[1]}")
-				print(f"Seq No:         {sequence_number}")
-				print(f"Length:         {packet_length}")
-				print(f"Payload:        {data[26:(26+4)].decode('utf-8')}")
+				actual_sender_ip = str(ipaddress.ip_address(outer_header_up[1]))
+				actual_sender_port = outer_header_up[2]
 				
-				received_data_lock.acquire()
-				key_tuple = (actual_sender_ip, actual_sender_port, sequence_number)
-				if packet_type == 'D':
-					if bool(received_data) == False:
-						received_data[key_tuple] = data
-						buffer[key_tuple] = data
+				if str(ipaddress.ip_address(outer_header_up[3])) == str(socket.gethostbyname(socket.gethostname())) and outer_header_up[4] == UDP_PORT :
+					packet_type = data[17:18].decode('utf-8')
+					header = data[18:26]
+					header = struct.unpack('II', header)
+					sequence_number_network = header[0]
+					sequence_number = socket.ntohl(sequence_number_network)
+					#packet_length = struct.unpack('!I', data[5:9])[0]
+					packet_length = header[1]
+					count = count + 1
+					length_of_payload = length_of_payload + packet_length
+					
+					payload = data[26:].decode('utf-8')
+					
+					#payload = str(data[9:])
+					print(f"Packet Type:    {packet_type}")
+					print(f"Recv Time:      {str(datetime.datetime.now())}")
+					print(f"Sender Addr:    {actual_sender_ip}:{sender_port}")
+					print(f"Seq No:         {sequence_number}")
+					print(f"Length:         {packet_length}")
+					print(f"Payload:        {data[26:(26+4)].decode('utf-8')}")
+					
+					received_data_lock.acquire()
+					key_tuple = (actual_sender_ip, actual_sender_port, sequence_number)
+					if packet_type == 'D':
+						if bool(received_data) == False:
+							received_data[key_tuple] = data
+							buffer[key_tuple] = data
+							payload_data[sequence_number] = payload
+			
+						elif key_tuple in buffer:
+							received_data[key_tuple] = data
+						else:
+							received_data[key_tuple] = data
+							buffer[key_tuple] = data
+							payload_data[sequence_number] = payload
+							
+					received_data_lock.release()
+					if packet_type == 'E':
+						end_time = time.time()
 						
-						with open(filename, "a") as copied_file:
-							copied_file.write(payload)
-						print("\n")
-					elif key_tuple in buffer:
-						received_data[key_tuple] = data
-					else:
-						received_data[key_tuple] = data
-						buffer[key_tuple] = data
-						
-						with open(filename, "a") as copied_file:
-							copied_file.write(payload)
-						print("\n")
-				received_data_lock.release()
-				if packet_type == 'E':
-					end_time = time.time()
-					if start_time is None:
-						# case where the file does not exist on the sender
-						start_time = end_time
-					duration = end_time - start_time
-					break
+						for i in payload_data.keys():
+							with open(filename, "a") as copied_file:
+								copied_file.write(payload_data[i])
+							
+						if start_time is None:
+							# case where the file does not exist on the sender
+							start_time = end_time
+						duration = end_time - start_time
+						break
 			except BlockingIOError as bie:
 				pass
 

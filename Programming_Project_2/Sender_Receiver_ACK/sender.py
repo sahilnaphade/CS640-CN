@@ -130,6 +130,7 @@ def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_numb
 			total_transmissions = 0
 			buffer = []
 			sequence_number = 1
+			retransmit_count = 0
 			if packet_type == "D" and message != "":
 				
 				chunks = [message[i:i + payload_length] for i in range(0, len(message), payload_length)]
@@ -201,7 +202,7 @@ def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_numb
 								print(f"Retransmitting Packet...for sequence number {seq_no} and count is {transmit_attempt+1}")
 								sock.sendto(packet, (emulator_host, emulator_port))
 								# sock.sendto(packet, (requester_addr, requestor_wait_port))
-								
+								retransmit_count += 1
 								send_times[seq_no] = time.time()
 								time.sleep(1/rate)
 							# Update the global window to be used in other logics
@@ -245,6 +246,9 @@ def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_numb
 			print(f"Length:             {0}")
 			print(f"Payload:            {0}")
 			print("\n")
+			loss_rate = retransmit_count / total_transmissions
+			print(f"The observed loss rate is :  {loss_rate} \n")
+			
 			send_done = True
 			return
 		except Exception as ex:
