@@ -32,6 +32,17 @@ def delay_and_send(packet, delay, next_hop_IP, next_hop_port, seq_no, source_ip,
     finally:
         packet_is_being_delayed = False
 
+def get_routing(packet_dest_ip, packet_dest_port, forwarding_table):
+    for entry in forwarding_table:
+        if entry[0] == packet_dest_ip and entry[1] == packet_dest_port:
+            next_hop_host_name = entry[2]
+            next_hop_port = int(entry[3])
+            delay = entry[4]
+            loss_prob = float(entry[5])
+            return next_hop_host_name, next_hop_port, delay, loss_prob
+    return None, None, None, None
+
+
 if __name__ == "__main__":
     # 1. Parse arguments
     parser = argparse.ArgumentParser(description="Emulates network for UDP")
@@ -84,6 +95,7 @@ if __name__ == "__main__":
     sock.bind(('0.0.0.0', args.port))
     # Run the logic in loop
     while True:
+        packet = None
         data = addr = None
         try:
             # print(type(sock))
@@ -94,26 +106,41 @@ if __name__ == "__main__":
         if data:
             priority, source_ip, source_port, dest_ip, dest_port, length, packet_type, seq_no, inner_length, payload = outer_payload_decapsulate(data)
             print(f"priority: {priority}, src: {source_ip}@{source_port} -> dest: {dest_ip}@{dest_port}, length: {inner_length}")
-            
+            queue_full = False
             priority = str(priority)
             if priority == '1':
                 # print("Adding the packet to queue 1")
                 if priority_1_queue.full():
-                    LOG.error(f"QUEUE DROP - Packet seq: {seq_no} Priority: {priority} from src: {str(source_ip)} dest: {str(dest_ip)} dropped due to full queue")
-                    continue
+                    queue_full = True
+                    if packet_type == 'E':
+                        pass
+                    else:
+                        LOG.error(f"QUEUE DROP - Packet seq: {seq_no} Priority: {priority} from src: {str(source_ip)} dest: {str(dest_ip)} packet_type: {packet_type} dropped due to full queue")
+                        continue
                 priority_1_queue.put(data)
             elif priority == '2':
                 # print("Adding the packet to queue 2")
                 if priority_2_queue.full():
-                    LOG.error(f"QUEUE DROP - Packet seq: {seq_no} Priority: {priority} from src: {str(source_ip)} dest: {str(dest_ip)} dropped due to full queue")
-                    continue
+                    queue_full = True
+                    if packet_type == 'E':
+                        pass
+                    else:
+                        LOG.error(f"QUEUE DROP - Packet seq: {seq_no} Priority: {priority} from src: {str(source_ip)} dest: {str(dest_ip)} packet_type: {packet_type} dropped due to full queue")
+                        continue
                 priority_2_queue.put(data)
             else:
                 # print("Adding the packet to queue 3")
                 if priority_3_queue.full():
-                    LOG.error(f"QUEUE DROP - Packet seq: {seq_no} Priority: {priority} from src: {str(source_ip)} dest: {str(dest_ip)} dropped due to full queue")
-                    continue
+                    queue_full = True
+                    if packet_type == 'E':
+                        pass
+                    else:
+                        LOG.error(f"QUEUE DROP - Packet seq: {seq_no} Priority: {priority} from src: {str(source_ip)} dest: {str(dest_ip)} packet_type: {packet_type} dropped due to full queue")
+                        continue
                 priority_3_queue.put(data)
+            if queue_full and packet_type == 'E':
+                next_hop_host_name, next_hop_port, loss_prob, delay = get_routing(dest_ip, dest_port, fwd_table)
+                send_packet(packet, next_hop_host_name, next_hop_port)
             pass
         # The packets are received. Now check if any packet is being delayed
         # If not, try to transmit a new packet
@@ -145,15 +172,8 @@ if __name__ == "__main__":
                 continue
             else:
                 priority, source_ip, source_port, dest_ip, dest_port, length, packet_type, seq_no, inner_length, data = outer_payload_decapsulate(packet)
-                next_hop_host_name = next_hop_port = None
-                for entry in fwd_table:
-                    if entry[0] == dest_ip and entry[1] == dest_port:
-                        next_hop_host_name = entry[2]
-                        next_hop_port = int(entry[3])
-                        delay = entry[4]
-                        loss_prob = float(entry[5])
-                        # print(f"{next_hop_host_name}@{next_hop_port}")
-                        break
+                next_hop_host_name = next_hop_port = loss_prob = delay = None
+                next_hop_host_name, next_hop_port, loss_prob, delay = get_routing(dest_ip, dest_port, fwd_table)
                 LOG.info(f"Adding a packet @ {seq_no} at time: {time()}, delay is {delay}")
                 t1 = Thread(target=delay_and_send, args=[packet, delay, next_hop_host_name, next_hop_port, seq_no, source_ip, source_port, dest_ip, dest_port])
                 t1.start()

@@ -6,7 +6,7 @@ import time
 from utils_640 import *
 import argparse
 import ipaddress
-from threading import Thread, Lock
+from threading import Thread, Lock, Event
 
 
 # We can keep entire packet in memory in some data structure -> that way we dont need to get the requester info again and again
@@ -122,6 +122,9 @@ def create_header(packet_type, sequence_number, payload_length):
 def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_number, payload_length, rate, message, timeout, window_size, UDP_PORT, emulator_host, emulator_port,priority):
 	global window, window_lock, send_done
 	global transmit_count
+	last_send_ts = None
+	delay_event = Event()
+
 	sock = socket.socket(socket.AF_INET, # Internet
 				socket.SOCK_DGRAM) # UDP
 	while True:
@@ -154,11 +157,15 @@ def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_numb
 						packet = outer_header + inner_payload + n.encode("utf-8")
 						# sock.sendto((packet),
 						# (requester_addr, requestor_wait_port))
+						current_time = time.time()
+						if last_send_ts is not None:
+							if current_time - last_send_ts < 1/rate:
+								delay_event.wait(1/rate - (current_time - last_send_ts))
 						sock.sendto(packet, (emulator_host, emulator_port))
+						last_send_ts = time.time()
 
 						# print(f"Sending Packet... with sequence number : {sequence_number}")
 
-						current_time = time.time()
 						milliseconds = int((current_time - int(current_time)) * 1000)
 
 						# print("DATA Packet")
@@ -174,8 +181,6 @@ def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_numb
 						sequence_number += 1
 						
 						total_transmissions += 1
-
-						time.sleep(1/rate)
 					# After the window is send, start retransmit logic until all the packets are either acknowledged or gave up
 					while window:
 						# print("TRYING RETRANSMISSION!!!!!")
@@ -200,11 +205,14 @@ def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_numb
 								transmit_attempt = packet_transmit_attempt[1]
 								packet_priority, src_ip, src_port, dest_ip, dest_port, length, packet_type, seq_no, inner_length, data = outer_payload_decapsulate(packet)
 								print(f"Retransmitting Packet...for sequence number {seq_no} and count is {transmit_attempt+1}")
+								current_time = time.time()
+								if last_send_ts is not None:
+									if current_time - last_send_ts < 1/rate:
+										delay_event.wait(1/rate - (current_time - last_send_ts))
 								sock.sendto(packet, (emulator_host, emulator_port))
 								# sock.sendto(packet, (requester_addr, requestor_wait_port))
 								retransmit_count += 1
-								send_times[seq_no] = time.time()
-								time.sleep(1/rate)
+								last_send_ts = send_times[seq_no] = time.time()
 							# Update the global window to be used in other logics
 							window_lock.acquire()
 							for seq_no, send_time in send_times.items():
@@ -228,7 +236,7 @@ def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_numb
 			#sock.sendto(end_header + str(0).encode("utf-8"), (emulator_host, emulator_port))
 
 			end_outer_header =  struct.pack("<cIhIhI",
-								   "1".encode('utf-8'),
+								   str(priority).encode('utf-8'),
 								   int(ipaddress.ip_address(socket.gethostbyname(socket.gethostname()))), UDP_PORT, 
 								   int(ipaddress.ip_address(requester_addr)), requestor_wait_port, 0
 								)
