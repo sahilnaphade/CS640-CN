@@ -86,7 +86,7 @@ def receive_ACK(UDP_PORT):
 		try:
 			data_ack, addr = sock_receive.recvfrom(1024) # buffer size is 1024 bytes
 			priority, src_ip_addr, src_port, dst_ip_addr, dst_port, length, packet_type, sequence_number, inner_length, data = outer_payload_decapsulate(data_ack)
-			print(f"This is the packet type {packet_type}")
+			# print(f"This is the packet type {packet_type}")
 		
 			if packet_type == 'A':
 				# header_ack = data_ack[18:26]
@@ -156,18 +156,18 @@ def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_numb
 						# (requester_addr, requestor_wait_port))
 						sock.sendto(packet, (emulator_host, emulator_port))
 
-						print(f"Sending Packet... with sequence number : {sequence_number}")
+						# print(f"Sending Packet... with sequence number : {sequence_number}")
 
 						current_time = time.time()
 						milliseconds = int((current_time - int(current_time)) * 1000)
 
-						print("DATA Packet")
-						print(f"Send Time:          {time.strftime('%Y-%m-%d %H:%M:%S')}.{milliseconds:03d}")
-						print(f"Requester Addr:     {str(ipaddress.ip_address(requester_addr))}:{requestor_wait_port}")
-						print(f"Seq No:             {sequence_number}")
-						print(f"Length:             {len(n)}")
-						print(f"Payload:            {n[:4]}")
-						print("\n")
+						# print("DATA Packet")
+						# print(f"Send Time:          {time.strftime('%Y-%m-%d %H:%M:%S')}.{milliseconds:03d}")
+						# print(f"Requester Addr:     {str(ipaddress.ip_address(requester_addr))}:{requestor_wait_port}")
+						# print(f"Seq No:             {sequence_number}")
+						# print(f"Length:             {len(n)}")
+						# print(f"Payload:            {n[:4]}")
+						# print("\n")
 						window_lock.acquire()
 						window[sequence_number] = {'packet': packet, 'latest_send_time': current_time, 'transmit_attempt': 0}
 						window_lock.release()
@@ -239,13 +239,14 @@ def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_numb
 			current_time = time.time()
 			milliseconds = int((current_time - int(current_time)) * 1000)
 			
-			print("\nEND Packet")
-			print(f"Send Time:          {time.strftime('%Y-%m-%d %H:%M:%S')}.{milliseconds:03d}")
-			print(f"Requester Addr:     {str(ipaddress.ip_address(requester_addr))}:{requestor_wait_port}")
-			print(f"Seq No:             {sequence_number}")
-			print(f"Length:             {0}")
-			print(f"Payload:            {0}")
-			print("\n")
+			# print("\nEND Packet")
+			# print(f"Send Time:          {time.strftime('%Y-%m-%d %H:%M:%S')}.{milliseconds:03d}")
+			# print(f"Requester Addr:     {str(ipaddress.ip_address(requester_addr))}:{requestor_wait_port}")
+			# print(f"Seq No:             {sequence_number}")
+			# print(f"Length:             {0}")
+			# print(f"Payload:            {0}")
+			# print("\n")
+			
 			loss_rate = retransmit_count / total_transmissions
 			print(f"The observed loss rate is :  {loss_rate} \n")
 			

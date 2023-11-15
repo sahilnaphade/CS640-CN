@@ -102,6 +102,7 @@ def receive_data(UDP_IP, UDP_PORT, filename,Sender_IP, sender_port,window, emula
 				actual_sender_port = outer_header_up[2]
 				
 				if str(ipaddress.ip_address(outer_header_up[3])) == str(socket.gethostbyname(socket.gethostname())) and outer_header_up[4] == UDP_PORT :
+					start_time = time.time()
 					packet_type = data[17:18].decode('utf-8')
 					header = data[18:26]
 					header = struct.unpack('II', header)
@@ -115,12 +116,12 @@ def receive_data(UDP_IP, UDP_PORT, filename,Sender_IP, sender_port,window, emula
 					payload = data[26:].decode('utf-8')
 					
 					#payload = str(data[9:])
-					print(f"Packet Type:    {packet_type}")
-					print(f"Recv Time:      {str(datetime.datetime.now())}")
-					print(f"Sender Addr:    {actual_sender_ip}:{sender_port}")
-					print(f"Seq No:         {sequence_number}")
-					print(f"Length:         {packet_length}")
-					print(f"Payload:        {data[26:(26+4)].decode('utf-8')}")
+					# print(f"Packet Type:    {packet_type}")
+					# print(f"Recv Time:      {str(datetime.datetime.now())}")
+					# print(f"Sender Addr:    {actual_sender_ip}:{sender_port}")
+					# print(f"Seq No:         {sequence_number}")
+					# print(f"Length:         {packet_length}")
+					# print(f"Payload:        {data[26:(26+4)].decode('utf-8')}")
 					
 					received_data_lock.acquire()
 					key_tuple = (actual_sender_ip, actual_sender_port, sequence_number)
@@ -141,10 +142,12 @@ def receive_data(UDP_IP, UDP_PORT, filename,Sender_IP, sender_port,window, emula
 					if packet_type == 'E':
 						end_time = time.time()
 						
-						for i in payload_data.keys():
-							with open(filename, "a") as copied_file:
+						with open(filename, "a") as copied_file:	
+							for i in sorted(payload_data.keys()):
 								copied_file.write(payload_data[i])
-							
+						
+						
+						
 						if start_time is None:
 							# case where the file does not exist on the sender
 							start_time = end_time
@@ -156,7 +159,7 @@ def receive_data(UDP_IP, UDP_PORT, filename,Sender_IP, sender_port,window, emula
 		print("\n\n")
 		print("="*60)
 		print("Summary of Sender")
-		print(f"Sender addr:                {addr[0]}:{addr[1]}")
+		print(f"Sender addr:                {actual_sender_ip}:{actual_sender_port}")
 		print(f"Total Data Packets:         {count - 1}")
 		print(f"Total Data Bytes:           {length_of_payload}")
 		print(f"Average packets/second:     {math.ceil((count - 1) / float(duration)) if duration != 0 else 1}")
