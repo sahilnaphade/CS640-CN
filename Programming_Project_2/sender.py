@@ -261,8 +261,9 @@ def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_numb
 			# print(f"Length:             {0}")
 			# print(f"Payload:            {0}")
 			# print("\n")
-			
-			loss_rate = retransmit_count / total_transmissions
+			loss_rate = 0
+			if total_transmissions != 0:
+				loss_rate = retransmit_count / total_transmissions
 			print(f"The observed loss rate is :  {round(loss_rate*100, 2)}% \n")
 			
 			send_done = True

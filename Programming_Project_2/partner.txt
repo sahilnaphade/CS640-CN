@@ -1,5 +1,5 @@
 Student 1:
-Name: Sahil Naphade
+Name: Sahil Milind Naphade
 Email: smnaphade@cs.wisc.edu
 
 Student 2:
