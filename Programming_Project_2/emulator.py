@@ -10,7 +10,7 @@ from threading import Event, Thread
 
 packet_is_being_delayed = False
 
-def delay_and_send(packet, delay, next_hop_IP, next_hop_port, seq_no, source_ip, source_port, dest_ip, dest_port):
+def delay_and_send(packet, delay, next_hop_IP, next_hop_port, seq_no, source_ip, source_port, dest_ip, dest_port, loss_prob):
     global packet_is_being_delayed
     try:
         packet_is_being_delayed = True
@@ -19,7 +19,7 @@ def delay_and_send(packet, delay, next_hop_IP, next_hop_port, seq_no, source_ip,
         if next_hop_IP is None:
             LOG.error(f"ROUTE DROP - Destination Host '{dest_ip}@{dest_port}' is not in the forwarding table. Dropping the packet")
             return
-        if packet_type != 'E':
+        if packet_type not in ['E', 'R']:
             # print(loss_prob)
             if random.random() < float(loss_prob):
                 LOG.error(f"SEND  DROP - source: {source_ip}@{source_port} seqno: {seq_no} destination: {dest_ip}@{dest_port}")
@@ -37,7 +37,7 @@ def get_routing(packet_dest_ip, packet_dest_port, forwarding_table):
         if entry[0] == packet_dest_ip and entry[1] == packet_dest_port:
             next_hop_host_name = entry[2]
             next_hop_port = int(entry[3])
-            delay = entry[4]
+            delay = float(entry[4])
             loss_prob = float(entry[5])
             return next_hop_host_name, next_hop_port, delay, loss_prob
     return None, None, None, None
@@ -78,7 +78,7 @@ if __name__ == "__main__":
                 if (emulator_name == self_ip or emulator_name == self_name) and int(emulator_port) == args.port:
                     dest_host_ip = socket.gethostbyname(dest_host_name)
                     next_hop_ip = socket.gethostbyname(next_hop_host_name)
-                    fwd_table.append(tuple([dest_host_ip, int(dest_port), next_hop_ip, int(next_hop_port), float(int(delay)/1000), int(loss_prob)/100]))
+                    fwd_table.append(tuple([dest_host_ip, int(dest_port), next_hop_ip, int(next_hop_port), float(int(delay)/1000), float(int(loss_prob)/100)]))
     LOG.info(fwd_table)
 
     priority_1_queue = PriorityQueue(maxsize=args.queue_size)
@@ -139,7 +139,7 @@ if __name__ == "__main__":
                         continue
                 priority_3_queue.put(data)
             if queue_full and packet_type == 'E':
-                next_hop_host_name, next_hop_port, loss_prob, delay = get_routing(dest_ip, dest_port, fwd_table)
+                next_hop_host_name, next_hop_port, delay, loss_prob  = get_routing(dest_ip, dest_port, fwd_table)
                 send_packet(packet, next_hop_host_name, next_hop_port)
             pass
         # The packets are received. Now check if any packet is being delayed
@@ -173,9 +173,9 @@ if __name__ == "__main__":
             else:
                 priority, source_ip, source_port, dest_ip, dest_port, length, packet_type, seq_no, inner_length, data = outer_payload_decapsulate(packet)
                 next_hop_host_name = next_hop_port = loss_prob = delay = None
-                next_hop_host_name, next_hop_port, loss_prob, delay = get_routing(dest_ip, dest_port, fwd_table)
+                next_hop_host_name, next_hop_port, delay, loss_prob = get_routing(dest_ip, dest_port, fwd_table)
                 LOG.info(f"Adding a packet @ {seq_no} at time: {time()}, delay is {delay}")
-                t1 = Thread(target=delay_and_send, args=[packet, delay, next_hop_host_name, next_hop_port, seq_no, source_ip, source_port, dest_ip, dest_port])
+                t1 = Thread(target=delay_and_send, args=[packet, delay, next_hop_host_name, next_hop_port, seq_no, source_ip, source_port, dest_ip, dest_port, loss_prob])
                 t1.start()
                 continue
         else:

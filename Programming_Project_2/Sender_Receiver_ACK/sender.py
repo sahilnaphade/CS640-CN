@@ -15,6 +15,7 @@ window = {}
 transmit_count = 0
 THREADS = []
 send_done = False
+total_ack_count = 0
 
 
 """Receives request from the Requester for the filename (from which data is to be sent)"""
@@ -68,7 +69,7 @@ def receive_request(UDP_IP, UDP_PORT):
 
 def receive_ACK(UDP_PORT):
 	start_time = time.time()
-	global window, window_lock, send_done
+	global window, window_lock, send_done, total_ack_count
 	sock_receive = socket.socket(socket.AF_INET, # Internet
 			socket.SOCK_DGRAM)
 	
@@ -97,13 +98,19 @@ def receive_ACK(UDP_PORT):
 				if sequence_number_ack in window:
 					print(f"Received ACK for sequence_number : {sequence_number_ack}")
 					window_lock.acquire()
-					window.pop(sequence_number_ack)
+					total_ack_count += 1
+					# print(f"Total acks are : {total_ack_count}")
+					if sequence_number_ack in window:
+						window.pop(sequence_number_ack)
 					window_lock.release()
 			else:
 				pass
 		
 		except BlockingIOError as bie:
 			continue
+		finally:
+			# print(total_ack_count)
+			pass
 
 # def packet_retransmit(packet_type, payload_length, rate, emulator_host, emulator_port, priority, timeout):
 	
@@ -256,7 +263,7 @@ def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_numb
 			# print("\n")
 			
 			loss_rate = retransmit_count / total_transmissions
-			print(f"The observed loss rate is :  {loss_rate} \n")
+			print(f"The observed loss rate is :  {round(loss_rate*100, 2)}% \n")
 			
 			send_done = True
 			return
@@ -279,6 +286,8 @@ def main(sender_wait_port, requestor_port, packet_rate, start_seq_no, payload_le
 		else:
 			print("File with name {} does not exist. Ending the connection.\n".format(filename))
 			send_packets('E', requestor_ip, actual_requestor_port, start_seq_no, payload_length, packet_rate, "", timeout, window_size,sender_wait_port, emulator_host, emulator_port, priority)
+	# global total_ack_count
+	# print(f"Total ACKS: {total_ack_count}")
 	t1.join()
 	exit(0)
 
