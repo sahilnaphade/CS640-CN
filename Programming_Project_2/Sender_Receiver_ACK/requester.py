@@ -2,17 +2,17 @@ import socket
 import struct
 import os
 import time
-import datetime
+from copy import deepcopy
 import math
 import argparse
 import ipaddress
 from utils_640 import *
-import threading
-from threading import Lock
+from threading import Lock, Thread
 
 THREADS = []
 received_data = {}
 received_data_lock = Lock()
+sender_start_times = {}
 
 def send_request(packet_type,Sender_IP, sender_port, filename, emulator_name, emulator_port,priority,window, waiting_port):
 	try:
@@ -32,56 +32,17 @@ def send_request(packet_type,Sender_IP, sender_port, filename, emulator_name, em
 	except Exception as ex:
 		raise ex
 
-
-def send_ack(Sender_IP, sender_port, emulator_name, emulator_port,priority, waiting_port):
-	global received_data, received_data_lock
-	end_received = False
-	sock = None
-	try:
-		sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-		while True:
-			
-			key_copy = tuple(received_data.keys())
-			for check_tuple in sorted(key_copy):
-				
-				if not (check_tuple[0] == Sender_IP and check_tuple[1] == sender_port):
-					return
-				packet_type = received_data[check_tuple][17:18].decode('utf-8')
-				request_inner_header = 'A'.encode("utf-8") + struct.pack('II', check_tuple[2], 0)
-				request_outer_header =  struct.pack("<cIhIhI",
-											str(priority).encode('utf-8'),
-											int(ipaddress.ip_address(socket.gethostbyname(socket.gethostname()))), waiting_port,
-											int(ipaddress.ip_address(Sender_IP)), sender_port,
-											int(len(request_inner_header))
-										)
-				
-				sock.sendto(request_outer_header + request_inner_header + '1'.encode('utf-8'), (emulator_name,emulator_port))
-				
-				print(f"ACK sent to the sender for sequence number : {check_tuple}")
-				received_data_lock.acquire()
-				if check_tuple in received_data:
-					received_data.pop(check_tuple)
-				received_data_lock.release()
-				
-				if packet_type == 'E':
-					end_received = True
-			if end_received:
-				# print("SAHIL!! THE DATA END RECEIVED!!!!! \n Returning from the thread")
-				return
-	except Exception as ex:
-		raise ex
-	finally:
-		if sock:
-			sock.close()
-
-
-def receive_data(UDP_IP, UDP_PORT, filename,Sender_IP, sender_port,window, emulator_name, emulator_port):
+def receive_data(UDP_IP, UDP_PORT, filename, tracker_data, window, emulator_name, emulator_port):
+	sock = send_sock = None
 	try:
 		sock = socket.socket(socket.AF_INET, # Internet
 							socket.SOCK_DGRAM) # UDP
+		send_sock = socket.socket(socket.AF_INET,
+							socket.SOCK_DGRAM)
 		# print("Requster waiting on IP {} @ port {}".format(UDP_IP, UDP_PORT))
 		sock.setblocking(0)
-		global received_data, received_data_lock
+		tracker_cpy = deepcopy(tracker_data)
+		global received_data, received_data_lock, sender_start_times
 		sock.bind(('0.0.0.0', UDP_PORT))
 		start_time = None
 		count = 0
@@ -125,50 +86,66 @@ def receive_data(UDP_IP, UDP_PORT, filename,Sender_IP, sender_port,window, emula
 					
 					received_data_lock.acquire()
 					key_tuple = (actual_sender_ip, actual_sender_port, sequence_number)
+					sender_tuple = (actual_sender_ip, actual_sender_port)
+					if sender_tuple not in payload_data:
+						payload_data[sender_tuple] = {}
+					if sender_tuple not in sender_start_times:
+						sender_start_times[sender_tuple] = time.time()
 					if packet_type == 'D':
 						if bool(received_data) == False:
 							received_data[key_tuple] = data
 							buffer[key_tuple] = data
-							payload_data[sequence_number] = payload
+							payload_data[sender_tuple][sequence_number] = payload
 			
 						elif key_tuple in buffer:
 							received_data[key_tuple] = data
 						else:
 							received_data[key_tuple] = data
 							buffer[key_tuple] = data
-							payload_data[sequence_number] = payload
-							
+							payload_data[sender_tuple][sequence_number] = payload
+						# Send ack for the packet
+						request_inner_header = 'A'.encode("utf-8") + struct.pack('II', sequence_number, 0)
+						request_outer_header =  struct.pack("<cIhIhI",
+											str(1).encode('utf-8'),
+											int(ipaddress.ip_address(socket.gethostbyname(socket.gethostname()))),
+											UDP_PORT,
+											int(ipaddress.ip_address(actual_sender_ip)),
+											actual_sender_port,
+											int(len(request_inner_header))
+										)
+						send_sock.sendto(request_outer_header + request_inner_header + '1'.encode('utf-8'), (emulator_name, emulator_port))
 					received_data_lock.release()
 					if packet_type == 'E':
 						end_time = time.time()
-						
-						with open(filename, "a") as copied_file:	
-							for i in sorted(payload_data.keys()):
-								copied_file.write(payload_data[i])
-						
-						
-						
-						if start_time is None:
-							# case where the file does not exist on the sender
-							start_time = end_time
-						duration = end_time - start_time
-						break
+						with open(filename, "a") as copied_file:
+							current_sender_data = payload_data[sender_tuple]
+							for i in sorted(current_sender_data.keys()):
+								copied_file.write(current_sender_data[i])
+						duration = end_time - sender_start_times[sender_tuple]
+						print("\n\n")
+						print("="*60)
+						print("Summary of Sender")
+						print(f"Sender addr:                {actual_sender_ip}:{actual_sender_port}")
+						print(f"Total Data Packets:         {count - 1}")
+						print(f"Total Data Bytes:           {length_of_payload}")
+						print(f"Average packets/second:     {math.ceil((count - 1) / float(duration)) if duration != 0 else 1}")
+						print(f"Total Duration of the test: {round(duration*1000, 2)} ms")
+						print("="*60)
+						print("\n\n")
+						for tracker in tracker_cpy:
+							if tracker[2] == sender_tuple[0] and tracker[3] == sender_tuple[1]:
+								tracker_cpy.remove(tracker)
+						if len(tracker_cpy) == 0:
+							return
 			except BlockingIOError as bie:
 				pass
-
-		print("\n\n")
-		print("="*60)
-		print("Summary of Sender")
-		print(f"Sender addr:                {actual_sender_ip}:{actual_sender_port}")
-		print(f"Total Data Packets:         {count - 1}")
-		print(f"Total Data Bytes:           {length_of_payload}")
-		print(f"Average packets/second:     {math.ceil((count - 1) / float(duration)) if duration != 0 else 1}")
-		print(f"Total Duration of the test: {round(duration*1000, 2)} ms")
-		print("="*60)
-		print("\n\n")
-		sock.close()
 	except Exception as ex:
 		raise ex
+	finally:
+		if sock is not None:
+			sock.close()
+		if send_sock is not None:
+			send_sock.close()
 
 
 def main(waiting_port, file_to_request, window, emulator_host, emulator_port):
@@ -183,13 +160,20 @@ def main(waiting_port, file_to_request, window, emulator_host, emulator_port):
 				if filename == file_to_request:
 					tracker_data.append((filename, int(chunk_id), hostname, int(req_port)))
 		tracker_data.sort(key=lambda x: (x[0], x[1]))
+		# receiver_thread = Thread(target=receive_data, args=[socket.gethostbyname(socket.gethostname()), waiting_port, file_to_request,
+		# 								 tracker_data,
+		# 								 window, emulator_host, emulator_port])
+		# receiver_thread.start()
 		for filtered_host_info in tracker_data:
 			# print(f"Requesting file: {filtered_host_info[0]} Chunk ID: {filtered_host_info[1]} from Host {filtered_host_info[2]} {(socket.gethostbyname(filtered_host_info[2]))} @ port {filtered_host_info[3]}")
-			send_thread = threading.Thread(target=send_ack, daemon=True, args=(socket.gethostbyname(filtered_host_info[2]), filtered_host_info[3], emulator_host, emulator_port, 1, waiting_port))
-			send_thread.start()
-			threads.append(send_thread)
+			# send_thread = Thread(target=send_ack, daemon=True, args=(socket.gethostbyname(filtered_host_info[2]), filtered_host_info[3], emulator_host, emulator_port, 1, waiting_port))
+			# send_thread.start()
+			# threads.append(send_thread)
 			send_request('R',socket.gethostbyname(filtered_host_info[2]), filtered_host_info[3], file_to_request, emulator_host, emulator_port, 1, window, waiting_port)
-			receive_data(socket.gethostbyname(socket.gethostname()), waiting_port, file_to_request,socket.gethostbyname(filtered_host_info[2]), filtered_host_info[3],window, emulator_host, emulator_port)
+		receive_data(socket.gethostbyname(socket.gethostname()), waiting_port, file_to_request,
+										 tracker_data,
+		 								 window, emulator_host, emulator_port)
+		# receiver_thread.join()
 	else:
 		raise Exception("Tracker file does not exist.")
 

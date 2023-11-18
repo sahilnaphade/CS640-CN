@@ -14,15 +14,16 @@ def delay_and_send(packet, delay, next_hop_IP, next_hop_port, seq_no, source_ip,
     global packet_is_being_delayed
     try:
         packet_is_being_delayed = True
+        priority, src_ip_addr, src_port, dst_ip_addr, dst_port, length, packet_type, sequence_number, inner_length, data = outer_payload_decapsulate(packet)
         delay_event = Event()
         delay_event.wait(delay)
         if next_hop_IP is None:
-            LOG.error(f"ROUTE DROP - Destination Host '{dest_ip}@{dest_port}' is not in the forwarding table. Dropping the packet")
+            LOG.error(f"ROUTE DROP - Packet seq:{seq_no}, Priority:{priority}, packet_type:{packet_type}, length:{inner_length} | Source:{str(source_ip)}:{source_port} | Destination:{str(dest_ip)}:{dest_port} | Reason: Forwarding entry not found")
             return
-        if packet_type not in ['E', 'R']:
+        if packet_type in ['D', 'A']:
             # print(loss_prob)
             if random.random() < float(loss_prob):
-                LOG.error(f"SEND  DROP - source: {source_ip}@{source_port} seqno: {seq_no} destination: {dest_ip}@{dest_port}")
+                LOG.error(f"SEND  DROP - Packet seq:{seq_no}, Priority:{priority}, packet_type:{packet_type}, length:{inner_length} | Source:{str(source_ip)}:{source_port} | Destination:{str(dest_ip)}:{dest_port} | Reason: Loss event occurred")
                 return
         LOG.info(f"Sent the packet @ {seq_no} at time: {time()}")
         send_packet(packet, next_hop_IP, next_hop_port, log_handler=LOG)
@@ -57,13 +58,13 @@ if __name__ == "__main__":
     logging.basicConfig(
         filename=args.logfilename,
         filemode="w",
-        level=logging.INFO,
+        level=logging.ERROR,
         format="%(asctime)s.%(msecs)03d - %(levelname)s - %(message)s",
         # datefmt='%H:%M:%S',
-        datefmt='%Y-%m-%d %H:%M:%S'
+        datefmt='%H:%M:%S'
     )
     LOG = logging.getLogger(__name__)
-    LOG.exception("Starting!")
+    # LOG.exception("Starting!")
 
     # 3. Read forwarding table and initialize priority queues
     fwd_table = []
@@ -105,7 +106,7 @@ if __name__ == "__main__":
         # If we receive a packet -> unpack the information from the received socket datagram
         if data:
             priority, source_ip, source_port, dest_ip, dest_port, length, packet_type, seq_no, inner_length, payload = outer_payload_decapsulate(data)
-            print(f"priority: {priority}, src: {source_ip}@{source_port} -> dest: {dest_ip}@{dest_port}, length: {inner_length}")
+            # print(f"priority: {priority}, src: {source_ip}@{source_port} -> dest: {dest_ip}@{dest_port}, length: {inner_length}")
             queue_full = False
             priority = str(priority)
             if priority == '1':
@@ -115,8 +116,9 @@ if __name__ == "__main__":
                     if packet_type == 'E':
                         pass
                     else:
-                        LOG.error(f"QUEUE DROP - Packet seq: {seq_no} Priority: {priority} from src: {str(source_ip)} dest: {str(dest_ip)} packet_type: {packet_type} dropped due to full queue")
+                        LOG.error(f"QUEUE DROP - Packet seq:{seq_no}, Priority:{priority}, packet_type:{packet_type}, length:{inner_length} | Source: {str(source_ip)}:{source_port} | Destination: {str(dest_ip)}:{dest_port} | Reason: Full queue")
                         continue
+                LOG.info(f"Adding Packet seq: {seq_no} Priority: {priority} from src: {str(source_ip)} dest: {str(dest_ip)} packet_type: {packet_type} in QUEUE 1")
                 priority_1_queue.put(data)
             elif priority == '2':
                 # print("Adding the packet to queue 2")
@@ -125,8 +127,9 @@ if __name__ == "__main__":
                     if packet_type == 'E':
                         pass
                     else:
-                        LOG.error(f"QUEUE DROP - Packet seq: {seq_no} Priority: {priority} from src: {str(source_ip)} dest: {str(dest_ip)} packet_type: {packet_type} dropped due to full queue")
+                        LOG.error(f"QUEUE DROP - Packet seq:{seq_no}, Priority:{priority}, packet_type:{packet_type}, length:{inner_length} | Source: {str(source_ip)}:{source_port} | Destination: {str(dest_ip)}:{dest_port} | Reason: Full queue")
                         continue
+                    LOG.info(f"Adding Packet seq: {seq_no} Priority: {priority} from src: {str(source_ip)} dest: {str(dest_ip)} packet_type: {packet_type} in QUEUE 2")
                 priority_2_queue.put(data)
             else:
                 # print("Adding the packet to queue 3")
@@ -135,8 +138,9 @@ if __name__ == "__main__":
                     if packet_type == 'E':
                         pass
                     else:
-                        LOG.error(f"QUEUE DROP - Packet seq: {seq_no} Priority: {priority} from src: {str(source_ip)} dest: {str(dest_ip)} packet_type: {packet_type} dropped due to full queue")
+                        LOG.error(f"QUEUE DROP - Packet seq:{seq_no}, Priority:{priority}, packet_type:{packet_type}, length:{inner_length} | Source: {str(source_ip)}:{source_port} | Destination: {str(dest_ip)}:{dest_port} | Reason: Full queue")
                         continue
+                LOG.info(f"Adding Packet seq: {seq_no} Priority: {priority} from src: {str(source_ip)} dest: {str(dest_ip)} packet_type: {packet_type} in QUEUE 3")
                 priority_3_queue.put(data)
             if queue_full and packet_type == 'E':
                 next_hop_host_name, next_hop_port, delay, loss_prob  = get_routing(dest_ip, dest_port, fwd_table)
@@ -174,7 +178,7 @@ if __name__ == "__main__":
                 priority, source_ip, source_port, dest_ip, dest_port, length, packet_type, seq_no, inner_length, data = outer_payload_decapsulate(packet)
                 next_hop_host_name = next_hop_port = loss_prob = delay = None
                 next_hop_host_name, next_hop_port, delay, loss_prob = get_routing(dest_ip, dest_port, fwd_table)
-                LOG.info(f"Adding a packet @ {seq_no} at time: {time()}, delay is {delay}")
+                # LOG.info(f"Adding a packet @ {seq_no} at time: {time()}, delay is {delay}")
                 t1 = Thread(target=delay_and_send, args=[packet, delay, next_hop_host_name, next_hop_port, seq_no, source_ip, source_port, dest_ip, dest_port, loss_prob])
                 t1.start()
                 continue
