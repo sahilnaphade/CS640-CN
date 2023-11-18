@@ -41,7 +41,7 @@ def receive_data(UDP_IP, UDP_PORT, filename, tracker_data, window, emulator_name
 							socket.SOCK_DGRAM)
 		# print("Requster waiting on IP {} @ port {}".format(UDP_IP, UDP_PORT))
 		sock.setblocking(0)
-		tracker_cpy = deepcopy(tracker_data)
+		number_of_trackers = len(tracker_data)
 		global received_data, received_data_lock, sender_start_times
 		sock.bind(('0.0.0.0', UDP_PORT))
 		start_time = None
@@ -132,10 +132,8 @@ def receive_data(UDP_IP, UDP_PORT, filename, tracker_data, window, emulator_name
 						print(f"Total Duration of the test: {round(duration*1000, 2)} ms")
 						print("="*60)
 						print("\n\n")
-						for tracker in tracker_cpy:
-							if tracker[2] == sender_tuple[0] and tracker[3] == sender_tuple[1]:
-								tracker_cpy.remove(tracker)
-						if len(tracker_cpy) == 0:
+						number_of_trackers -= 1
+						if number_of_trackers == 0:
 							return
 			except BlockingIOError as bie:
 				pass
