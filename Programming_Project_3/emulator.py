@@ -165,7 +165,8 @@ if __name__ == "__main__":
                 # remove all the entries from the table for which this neighbour was the next hop
                 # Rebuild (?) the fwd table
                 for fwd_entry in fwd_table:
-                    if (fwd_entry[FWD_TABLE_NEXT_HOP_IDX] == neighbour)
+                    if (fwd_entry[FWD_TABLE_NEXT_HOP_IDX] == neighbour):
+                        fwd_entry[FWD_TABLE_VALID_IDX] = False
                 pass
         # 5. Send the newest LinkStateMessage to all neighbors if time has passed
         send_link_state_message()
