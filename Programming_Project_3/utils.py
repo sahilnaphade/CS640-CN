@@ -3,6 +3,14 @@ import struct
 import ipaddress
 from io import BlockingIOError
 
+PACKET_TYPE_HELLO = "H"
+PACKET_TYPE_LINK_STATE = "L"
+PACKET_TYPE_ROUTE_TRACE = "R"
+
+FWD_TABLE_DEST_IDX = 0
+FWD_TABLE_NEXT_HOP_IDX = 1
+FWD_TABLE_COST_IDX = 2
+
 def send_packet(packet, destination_host, destination_port, send_socket=None, log_handler=None):
     try:
         if not send_socket:
@@ -68,6 +76,68 @@ def outer_payload_decapsulate(packet):
     
     return priority.decode('utf-8'), src_ip_addr, src_port, dst_ip_addr, dst_port, length, packet_type, sequence_number, inner_length, data
 
-def decode_link_state_data(packet_inner_data):
-    pass
+def get_next_hop(source, destination, predecessors):
+    # Get the next hop in the path from source to destination
+    current_node = destination
+    while predecessors[current_node] != source:
+        current_node = predecessors[current_node]
+    return current_node
+
+
+def build_forward_table(topology):
+    # Dijkstra's algorithm to build the forwarding table
+    forward_table = {}
+    for node in topology:
+        distances, predecessors = dijkstra(node, topology)
+        for destination, cost in distances.items():
+            if destination != node:
+                nexthop = get_next_hop(node, destination, predecessors)
+                if node not in forward_table:
+                    forward_table[node] = {}
+                forward_table[node][destination] = nexthop
+    return forward_table
+
+def dijkstra(source, graph):
+    # Dijkstra's algorithm to calculate shortest paths
+    distances = {node: float('inf') for node in graph}
+    predecessors = {node: None for node in graph}
+    distances[source] = 0
+
+    unvisited_nodes = set(graph.keys())
+
+    while unvisited_nodes:
+        current_node = min(unvisited_nodes, key=lambda node: distances[node])
+        unvisited_nodes.remove(current_node)
+
+        for neighbor, cost in graph[current_node]:
+            potential_distance = distances[current_node] + cost
+            if potential_distance < distances[neighbor]:
+                distances[neighbor] = potential_distance
+                predecessors[neighbor] = current_node
+
+    return distances, predecessors
+
+
+"""
+We will format the link state vector as follows:
+    Dest_IP_1:Dest_port_1:cost|Dest_IP_2:Dest_port_2:cost
+    Since we get this information from another emulator about its adjacent nodes/connections
+    that emulator will be our next hop for this destination
+"""
+
+def encode_link_state_vector(fwd_table):
+    encoded_vector = []
+    for entry in fwd_table:
+        encoded_vector.append(entry[FWD_TABLE_DEST_IDX][0] + ":" + str(entry[FWD_TABLE_DEST_IDX][1]) + ":" + str(entry[FWD_TABLE_COST_IDX]))
+    final_str = "|".join(encoded_vector)
+    return final_str.encode('utf-8')
+
+def decode_link_state_vector(packet_inner_data):
+    link_state_vector = []
+    lsv = packet_inner_data.decode('utf-9')
+    ip_port_cost_pairs = lsv.split("|")
+    for each_pair in ip_port_cost_pairs:
+        dest_ip_addr, dest_port, dest_cost = each_pair.split(":")
+        link_state_vector.append([dest_ip_addr, int(dest_port), int(dest_cost)])
+    return link_state_vector
 
