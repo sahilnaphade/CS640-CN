@@ -6,7 +6,7 @@ import random
 from time import time
 # from prettytable import PrettyTable
 from io import BlockingIOError
-from utils import *
+from .utils import *
 from threading import Event, Thread
 
 # packet_is_being_delayed = False
@@ -47,11 +47,61 @@ def send_hello_message(src_ip, src_port, dest_ip, dest_port):
         myLSN += 1
     pass
 
-def send_link_state_message(my_adj_nodes, fwd_table):
-    pass
+def send_link_state_message(my_adj_nodes, fwd_table,TTL,self_ip, port):  #TODO : check if we are incrementing TTL when calling this function amid topology change
+    sock = socket.socket(socket.AF_INET, # Internet
+				socket.SOCK_DGRAM) # UDP
+    payload = encode_link_state_vector(fwd_table) # Will encode the full forwarding table until then as payload
+    inner_payload = inner_payload_encapsulate('L',0,payload,TTL) # payload length in the inner header is TTL
+    #Iterate through all the adjacent nodes and send the forwarding table
+    for node in my_adj_nodes:
+        packet = outer_payload_encapsulate(self_ip,port,node[FWD_TABLE_DEST_IDX][0],node[FWD_TABLE_COST_IDX][0],inner_payload)
+        sock.sendto(packet,(node[FWD_TABLE_COST_IDX][0],node[FWD_TABLE_COST_IDX][1]))
+    
+    sock.close()
 
-def forward_packet():
-    pass
+def forward_packet(data, my_adjacent_nodes,fwd_table,self_ip,port):
+    priority,src_ip,src_port,dest_ip,dest_port,length,packet_type,seq_no,TTL,payload = outer_payload_decapsulate(data)
+    socket = socket.socket(socket.AF_INET, # Internet
+				socket.SOCK_DGRAM) # UDP
+    if packet_type == 'L':
+        if not TTL:
+            TTL -= 1
+            inner_payload = inner_payload_encapsulate('L',seq_no,payload,TTL)
+            for node in my_adjacent_nodes:
+                packet = outer_payload_encapsulate(src_ip,src_port,node[FWD_TABLE_DEST_IDX][0],node[FWD_TABLE_COST_IDX][1],inner_payload)
+                socket.sendto(packet,(node[FWD_TABLE_COST_IDX][0],node[FWD_TABLE_COST_IDX][1]))
+    elif packet_type == 'T':
+        # Check if TTL is zero, if yes then need to send the route trace reply packet to the route trace applicaiton
+        # with src ip and port of its own and dest ip and port of the route trace packet
+        if TTL == 0:
+            TTL = 5  #TODO : Need to deterime the exact value
+            decoded_payload = decode_link_state_vector(payload) # This will give the ip and port of route trace
+            
+            inner_payload = inner_payload_encapsulate('Y',0,payload,TTL)    
+            packet = outer_payload_encapsulate(self_ip,port,decoded_payload[0][0],decoded_payload[0][1],inner_payload)
+            
+            # send reply packet back to the route trace applicaiton.
+            socket.sendto(packet, (decoded_payload[0][0],decoded_payload[0][1]) )
+            
+            #TODO : Need to verify packet format consistency with the project requirements : source port, ip
+        else :
+            for entry in fwd_table:
+                if entry[FWD_TABLE_DEST_IDX] == dest_ip: # Check the nexthop for the destination in the forwarding table
+                    TTL -= 1  # decrement the TTL and create new packet and send to the next hop.
+                    inner_payload = inner_payload_encapsulate('T',0,payload,TTL)
+                    
+                    packet = outer_payload_encapsulate(src_ip,src_port,dest_ip,dest_port,inner_payload)
+                    socket.sendto(packet,(entry[FWD_TABLE_NEXT_HOP_IDX][0],entry[FWD_TABLE_NEXT_HOP_IDX][1]))
+                    
+                    break
+                
+                
+        
+            
+            
+            
+        
+    
 
 # Souce of LSV will always be the immediate adjacent == cost will increment by 1
 def update_fwd_table(fwd_table, received_lsv, source_of_lsv):
@@ -135,6 +185,7 @@ if __name__ == "__main__":
     my_adjacent_nodes = []
     self_host = tuple([self_ip, int(args.port)])
     full_network_topology = set() # List of all nodes in the current network
+    TTL = 0
 
     with open(args.topology_file, "r") as topo_file:
         # file_data = topo_file.readlines()
@@ -255,7 +306,7 @@ if __name__ == "__main__":
                 # Set the route to itself and set cost as 1 for the neighbour
                 if not any(entry[FWD_TABLE_DEST_IDX] == source for entry in fwd_table):
                     fwd_table.append([source, source, 1])
-                    send_link_state_message(my_adjacent_nodes, fwd_table)
+                    send_link_state_message(my_adjacent_nodes, fwd_table, TTL, self_ip,args.port)
                     continue
             # Case C: If a Link State message
             elif packet_type == PACKET_TYPE_LINK_STATE:
@@ -268,8 +319,8 @@ if __name__ == "__main__":
                     topology_changed = update_fwd_table(fwd_table, received_lsv, source)
                     if topology_changed:
                         #   Call forwardpacket to flood to neighbours
-                        for each_neighbour in my_adjacent_nodes:
-                            forward_packet(data, each_neighbour[0], each_neighbour[1]) #TODO
+                        # for each_neighbour in my_adjacent_nodes:
+                        forward_packet(data, my_adjacent_nodes,fwd_table,self_ip,args.port) #TODO
                 else:
                     pass
             # Case 4: It is routetrace packet -> TODO
@@ -292,5 +343,5 @@ if __name__ == "__main__":
         for each_entry in deletion_entries:
             fwd_table.remove(each_entry)
         # 5. Send the newest LinkStateMessage to all neighbors if time has passed
-        send_link_state_message(my_adjacent_nodes, fwd_table)
+        send_link_state_message(my_adjacent_nodes, fwd_table, TTL, self_ip,args.port)
         continue
