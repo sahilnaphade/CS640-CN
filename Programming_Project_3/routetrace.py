@@ -3,7 +3,7 @@ import struct
 import os
 from io import BlockingIOError
 import time
-from .utils import *
+from utils import *
 import argparse
 import ipaddress
 from threading import Thread, Lock
@@ -39,7 +39,9 @@ def main(route_port, src_hostname, src_port, dest_hostname, dest_port, debug):
 	sock_receive = socket.socket(socket.AF_INET, # Internet
 			socket.SOCK_DGRAM)
 	sock_receive.bind(('0.0.0.0', route_port))
-	
+
+	route_found = False
+	path_vec = None
 	while True:
 		data, addr = sock_receive.recvfrom(1024)
 		priority, s_hostname, s_port, d_hostname, d_port, length, packet_type, TTL, inner_length, data = outer_payload_decapsulate(data)
@@ -57,6 +59,8 @@ def main(route_port, src_hostname, src_port, dest_hostname, dest_port, debug):
 		
 		if packet_type == 'Y':
 			if d_hostname == dest_hostname and d_port == dest_port:
+				route_found = True
+				path_vec = decode_lsv_route_trace(data)
 				break
 			else:
 				TTL += 1
@@ -70,6 +74,9 @@ def main(route_port, src_hostname, src_port, dest_hostname, dest_port, debug):
 					print(f"Destination Addr:     {str(ipaddress.ip_address(dest_hostname))}:{dest_port}")
 					print(f"TTL :             {TTL}")
 					print("\n")
+	if route_found:
+		print(f"ROUTE to the destination {args.dest_hostname}:{args.dest_port} FOUND!")
+		print(" --> ".join(path_vec))	
 		
 		
 if __name__ == "__main__":

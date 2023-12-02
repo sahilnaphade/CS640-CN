@@ -5,7 +5,8 @@ from io import BlockingIOError
 
 PACKET_TYPE_HELLO = "H"
 PACKET_TYPE_LINK_STATE = "L"
-PACKET_TYPE_ROUTE_TRACE = "R"
+PACKET_TYPE_ROUTE_TRACE = "T"
+PACKET_TYPE_ROUTE_TRACE_REPLY = "Y"
 
 FWD_TABLE_DEST_IDX = 0
 FWD_TABLE_NEXT_HOP_IDX = 1
@@ -38,9 +39,11 @@ def inner_payload_encapsulate(packet_type, packet_seq_no, payload, payload_lengt
     return header + payload.encode("utf-8")
 
 def outer_payload_encapsulate(src_ip_addr, src_port, dest_ip_addr, dest_port, inner_payload, priority=1):
-    src_ip_int = ipaddress.v4_int_to_packed(src_ip_addr)
-    dst_ip_int = ipaddress.v4_int_to_packed(dest_ip_addr)
-    outer_header = struct.pack("cIhIhI", str(priority).encode('utf-8'), src_ip_int, src_port, dst_ip_int, dest_port, len(inner_payload))
+    if isinstance(src_ip_addr, str):
+        src_ip_addr = int(ipaddress.ip_address(src_ip_addr))
+    if isinstance(dest_ip_addr, str):
+        dest_ip_addr = int(ipaddress.ip_address(dest_ip_addr))
+    outer_header = struct.pack("<cIhIhI", str(priority).encode('utf-8'), src_ip_addr, int(src_port), dest_ip_addr, int(dest_port), len(inner_payload))
     return outer_header + inner_payload
 
 def inner_payload_decapsulate(inner_packet):
@@ -134,10 +137,29 @@ def encode_link_state_vector(fwd_table):
 
 def decode_link_state_vector(packet_inner_data):
     link_state_vector = []
-    lsv = packet_inner_data.decode('utf-9')
+    lsv = packet_inner_data.decode('utf-8')
     ip_port_cost_pairs = lsv.split("|")
     for each_pair in ip_port_cost_pairs:
         dest_ip_addr, dest_port, dest_cost = each_pair.split(":")
         link_state_vector.append([dest_ip_addr, int(dest_port), int(dest_cost)])
     return link_state_vector
 
+"""
+FOR the route trace
+We will format the link state vector as follows:
+    Dest_IP_1:Dest_port_1|Dest_IP_2:Dest_port_2
+    Since we get this information from another emulator about its adjacent nodes/connections
+    that emulator will be our next hop for this destination
+"""
+
+def append_own_send_info(payload, self_ip, self_port):
+    return payload + "|" + str(self_ip) + ":" + str(self_port)
+
+def decode_lsv_route_trace(packet_inner_data):
+    link_state_vector = []
+    lsv = packet_inner_data.decode('utf-8')
+    ip_port_pairs = lsv.split("|")
+    for each_pair in ip_port_pairs:
+        dest_ip_addr, dest_port = each_pair.split(":")
+        link_state_vector.append([dest_ip_addr, int(dest_port)])
+    return link_state_vector
