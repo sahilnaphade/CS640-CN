@@ -3,7 +3,7 @@ import struct
 import os
 from io import BlockingIOError
 import time
-from utils_640 import *
+from .utils import *
 import argparse
 import ipaddress
 from threading import Thread, Lock
@@ -20,8 +20,10 @@ def main(route_port, src_hostname, src_port, dest_hostname, dest_port, debug):
 	sock = socket.socket(socket.AF_INET, # Internet
 				socket.SOCK_DGRAM) # UDP
 	TTL = 0
-	packet = create_header(src_hostname,src_port,dest_hostname,dest_port,TTL)
-	sock.sendto(packet, (src_hostname, src_port))
+	payload = str((sock.gethostbyname(sock.gethostname()))+ ":" + route_port + ":" + '0')
+	inner_payload = inner_payload_encapsulate('T', 0, payload,TTL)
+	packet = outer_payload_encapsulate(sock.gethostbyname(src_hostname),src_port,sock.gethostbyname(dest_hostname),dest_port,inner_payload)
+	sock.sendto(packet, (sock.gethostbyname(src_hostname), src_port))
 	
 	current_time = time.time()
 	milliseconds = int((current_time - int(current_time)) * 1000)
@@ -40,9 +42,7 @@ def main(route_port, src_hostname, src_port, dest_hostname, dest_port, debug):
 	
 	while True:
 		data, addr = sock_receive.recvfrom(1024)
-		packet_type = data[0]
-		header = struct.unpack("<IhIhI", data[1:])
-		s_hostname, s_port, d_hostname, d_port = header
+		priority, s_hostname, s_port, d_hostname, d_port, length, packet_type, TTL, inner_length, data = outer_payload_decapsulate(data)
 		
 		current_time = time.time()
 		milliseconds = int((current_time - int(current_time)) * 1000)
@@ -60,7 +60,8 @@ def main(route_port, src_hostname, src_port, dest_hostname, dest_port, debug):
 				break
 			else:
 				TTL += 1
-				create_header(src_hostname,src_port,dest_hostname,dest_port,TTL)
+				inner_payload = inner_payload_encapsulate(packet_type, 0, payload, TTL)
+				packet = outer_payload_encapsulate(sock.gethostbyname(src_hostname),src_port,sock.gethostbyname(dest_hostname),dest_port,inner_payload)
 				sock.sendto(packet, (src_hostname, src_port))
 				if debug:
 					print("\nRoute Packet")
