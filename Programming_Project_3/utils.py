@@ -11,6 +11,7 @@ PACKET_TYPE_ROUTE_TRACE_REPLY = "Y"
 FWD_TABLE_DEST_IDX = 0
 FWD_TABLE_NEXT_HOP_IDX = 1
 FWD_TABLE_COST_IDX = 2
+FWD_TABLE_VALID_IDX = 3
 
 def send_packet(packet, destination_host, destination_port, send_socket=None, log_handler=None):
     try:
@@ -35,8 +36,9 @@ def receive_packet(receive_port, receive_socket=None):
 
 def inner_payload_encapsulate(packet_type, packet_seq_no, payload, payload_length):
     sequence_number_network = socket.htonl(packet_seq_no)
-    header = str(packet_type).encode("utf-8") + struct.pack('II', sequence_number_network, payload_length)
-    return header + payload.encode("utf-8")
+    packet = str(packet_type).encode("utf-8") + struct.pack('II', sequence_number_network, payload_length) + payload.encode('utf-8')
+    # print(type(packet))
+    return packet
 
 def outer_payload_encapsulate(src_ip_addr, src_port, dest_ip_addr, dest_port, inner_payload, priority=1):
     if isinstance(src_ip_addr, str):
@@ -123,17 +125,17 @@ def dijkstra(source, graph):
 
 """
 We will format the link state vector as follows:
-    Dest_IP_1:Dest_port_1:cost|Dest_IP_2:Dest_port_2:cost
+    IP_1:Port_1:cost1|IP_2:Port_2:cost2|...
     Since we get this information from another emulator about its adjacent nodes/connections
     that emulator will be our next hop for this destination
 """
 
-def encode_link_state_vector(fwd_table):
+def generate_link_state_vector(fwd_table):
     encoded_vector = []
     for entry in fwd_table:
         encoded_vector.append(entry[FWD_TABLE_DEST_IDX][0] + ":" + str(entry[FWD_TABLE_DEST_IDX][1]) + ":" + str(entry[FWD_TABLE_COST_IDX]))
     final_str = "|".join(encoded_vector)
-    return final_str.encode('utf-8')
+    return final_str
 
 def decode_link_state_vector(packet_inner_data):
     link_state_vector = []
@@ -141,7 +143,7 @@ def decode_link_state_vector(packet_inner_data):
     ip_port_cost_pairs = lsv.split("|")
     for each_pair in ip_port_cost_pairs:
         dest_ip_addr, dest_port, dest_cost = each_pair.split(":")
-        link_state_vector.append([dest_ip_addr, int(dest_port), int(dest_cost)])
+        link_state_vector.append([dest_ip_addr, int(dest_port), int(dest_cost) if dest_cost != "None" else None])
     return link_state_vector
 
 """
