@@ -35,7 +35,10 @@ def receive_packet(receive_port, receive_socket=None):
         raise ex
 
 def inner_payload_encapsulate(packet_type, packet_seq_no, payload, payload_length):
+    print(f"BEFORE HTONL: {packet_seq_no}")
     sequence_number_network = socket.htonl(packet_seq_no)
+    print(f"AFTER HTONL: {sequence_number_network}")
+    print(payload_length)
     packet = str(packet_type).encode("utf-8") + struct.pack('II', sequence_number_network, payload_length) + payload.encode('utf-8')
     # print(type(packet))
     return packet
