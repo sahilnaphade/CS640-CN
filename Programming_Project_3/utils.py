@@ -8,9 +8,9 @@ PACKET_TYPE_LINK_STATE = "L"
 PACKET_TYPE_ROUTE_TRACE = "T"
 PACKET_TYPE_ROUTE_TRACE_REPLY = "Y"
 
-FWD_TABLE_DEST_IDX = 0
-FWD_TABLE_NEXT_HOP_IDX = 1
-FWD_TABLE_COST_IDX = 2
+DESTINATION = 0
+NEXT_HOP = 1
+COST = 2
 FWD_TABLE_VALID_IDX = 3
 
 def send_packet(packet, destination_host, destination_port, send_socket=None, log_handler=None):
@@ -35,10 +35,10 @@ def receive_packet(receive_port, receive_socket=None):
         raise ex
 
 def inner_payload_encapsulate(packet_type, packet_seq_no, payload, payload_length):
-    print(f"BEFORE HTONL: {packet_seq_no}")
+    # print(f"BEFORE HTONL: {packet_seq_no}")
     sequence_number_network = socket.htonl(packet_seq_no)
-    print(f"AFTER HTONL: {sequence_number_network}")
-    print(payload_length)
+    # print(f"AFTER HTONL: {sequence_number_network}")
+    # print(payload_length)
     packet = str(packet_type).encode("utf-8") + struct.pack('II', sequence_number_network, payload_length) + payload.encode('utf-8')
     # print(type(packet))
     return packet
@@ -136,7 +136,7 @@ We will format the link state vector as follows:
 def generate_link_state_vector(fwd_table):
     encoded_vector = []
     for entry in fwd_table:
-        encoded_vector.append(entry[FWD_TABLE_DEST_IDX][0] + ":" + str(entry[FWD_TABLE_DEST_IDX][1]) + ":" + str(entry[FWD_TABLE_COST_IDX]))
+        encoded_vector.append(entry[DESTINATION][0] + ":" + str(entry[DESTINATION][1]) + ":" + str(entry[COST]))
     final_str = "|".join(encoded_vector)
     return final_str
 
