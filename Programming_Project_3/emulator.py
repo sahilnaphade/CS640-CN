@@ -101,7 +101,7 @@ def forward_packet(data, my_adjacent_nodes,fwd_table,self_ip,self_port):
             # with src ip and port of its own and dest ip and port of the route trace packet
             if current_TTL == 0:
                 decoded_payload = decode_lsv_route_trace(payload) # This will give the ip and port of route trace
-                current_TTL = len(decoded_payload) - 1 # Total number of hops, as we append all the IP:port to the payload
+                current_TTL = len(decoded_payload) # Total number of hops, as we append all the IP:port to the payload
                 next_hop_for_packet = decoded_payload[-1]
                 inner_payload = inner_payload_encapsulate(PACKET_TYPE_ROUTE_TRACE_REPLY,0,payload,current_TTL)    
                 packet = outer_payload_encapsulate(self_ip,self_port,decoded_payload[0][0],decoded_payload[0][1],inner_payload)
@@ -132,7 +132,7 @@ def forward_packet(data, my_adjacent_nodes,fwd_table,self_ip,self_port):
             # TODO check
             decoded_payload = decode_lsv_route_trace(payload) # This will give the ip and port of route trace
             current_TTL = current_TTL - 1 # Total number of hops, as we append all the IP:port to the payload
-            next_hop_for_packet = decoded_payload[(-1)*(current_TTL)]
+            next_hop_for_packet = decoded_payload[(-1)*(len(decoded_payload) + current_TTL)]
             inner_payload = inner_payload_encapsulate(PACKET_TYPE_ROUTE_TRACE_REPLY,0,payload,current_TTL)    
             packet = outer_payload_encapsulate(self_ip,self_port,decoded_payload[0][0],decoded_payload[0][1],inner_payload)
             if DEBUG_PRINT:
@@ -172,30 +172,38 @@ def update_fwd_table(fwd_table, received_lsv, source_of_lsv, my_adjacent_nodes):
                     if each_fwd_entry[COST] != incoming_cost:
                         each_fwd_entry[COST] = incoming_cost
                         topo_updated = True
+                        break
                 else:
                     # If the LSV says it can reach the destination through a different node with lower cost, we update
                     #   First, if the node was previously unreachable and still is, we dont update
-                    if incoming_cost is None and current_cost is None:
-                        continue
-                    #   If previously unreachable, but now reachable, we use it
-                    if (incoming_cost is not None and current_cost is None):
-                        each_fwd_entry[COST] = incoming_cost
-                        each_fwd_entry[NEXT_HOP] = source_of_lsv
-                        topo_updated = True
-                        continue
-                    #   If previously reachable, but this node cannot reach, skip
-                    if (incoming_cost is None and current_cost is not None):
-                        continue
-                    #   If was reachable and from the new node also reachable, check if the cost is lower. Update if yes
-                    if incoming_cost != current_cost:
-                        if incoming_cost < current_cost:
+                    if source_of_lsv in my_adjacent_nodes:
+                        if incoming_cost is None and current_cost is None:
+                            continue
+                        #   If previously unreachable, but now reachable, we use it
+                        if (incoming_cost is not None and current_cost is None):
                             each_fwd_entry[COST] = incoming_cost
                             each_fwd_entry[NEXT_HOP] = source_of_lsv
-                            if DEBUG_PRINT:
-                                print("Incoming cost for the destination {} is {}, "
-                                    "existing cost is {}. Updated the entry."
-                                    .format(dest_ip_port, incoming_cost, current_cost))
                             topo_updated = True
+                            continue
+                        #   If previously reachable, but this node cannot reach, skip
+                        if (incoming_cost is None and current_cost is not None):
+                            if each_fwd_entry[NEXT_HOP] == source_of_lsv:
+                                aNodeWentDown = True
+                                each_fwd_entry[COST] = None
+                                topo_updated = True
+                                continue
+                            else:
+                                continue
+                        #   If was reachable and from the new node also reachable, check if the cost is lower. Update if yes
+                        if incoming_cost != current_cost:
+                            if incoming_cost < current_cost:
+                                each_fwd_entry[COST] = incoming_cost
+                                each_fwd_entry[NEXT_HOP] = source_of_lsv
+                                if DEBUG_PRINT:
+                                    print("Incoming cost for the destination {} is {}, "
+                                        "existing cost is {}. Updated the entry."
+                                        .format(dest_ip_port, incoming_cost, current_cost))
+                                topo_updated = True
     all_stabilized = all(x[COST] is not None for x in fwd_table)
     if topo_updated:
         if all_stabilized:

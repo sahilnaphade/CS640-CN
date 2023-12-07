@@ -59,7 +59,7 @@ def inner_payload_decapsulate(inner_packet):
     length = header[1]
     sequence_number = socket.ntohl(sequence_number_network)
 
-    data = inner_packet[9:]
+    data = inner_packet[9:].decode('utf-8')
     return packet_type, sequence_number, length, data
 
 def outer_payload_metadata(packet):
@@ -142,7 +142,7 @@ def generate_link_state_vector(fwd_table):
 
 def decode_link_state_vector(packet_inner_data):
     link_state_vector = []
-    lsv = packet_inner_data.decode('utf-8')
+    lsv = packet_inner_data
     ip_port_cost_pairs = lsv.split("|")
     for each_pair in ip_port_cost_pairs:
         dest_ip_addr, dest_port, dest_cost = each_pair.split(":")

@@ -43,7 +43,7 @@ def inner_payload_decapsulate(inner_packet):
     length = header[1]
     sequence_number = socket.ntohl(sequence_number_network)
 
-    data = inner_packet[9:]
+    data = inner_packet[9:].decode('utf-8')
     return packet_type, sequence_number, length, data
 
 def outer_payload_metadata(packet):
