@@ -411,7 +411,7 @@ if __name__ == "__main__":
                         if fwd_entry[DESTINATION] == source:
                             fwd_entry[COST] = 1
                             send_link_state_message(my_adjacent_nodes, fwd_table, route_topology, TTL, self_ip, args.port)
-                            print("Topology changed. Node {} is now reachable. Current FWD table")
+                            print("Topology changed. Node {} is now reachable. Current FWD table".format(source))
                             print_fwd_table(fwd_table)
                             break
                 helloTimestamps[source] = current_time
