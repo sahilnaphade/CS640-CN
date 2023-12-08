@@ -145,6 +145,7 @@ def decode_link_state_vector(packet_inner_data):
     lsv = packet_inner_data
     ip_port_cost_pairs = lsv.split("|")
     for each_pair in ip_port_cost_pairs:
+        # print(each_pair)
         dest_ip_addr, dest_port, dest_cost = each_pair.split(":")
         link_state_vector.append([dest_ip_addr, int(dest_port), int(dest_cost) if dest_cost != "None" else None])
     return link_state_vector
