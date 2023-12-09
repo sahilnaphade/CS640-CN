@@ -1,8 +1,6 @@
 import argparse
 import logging
 import socket
-from queue import PriorityQueue, Empty
-import random
 from time import time
 # from prettytable import PrettyTable
 from io import BlockingIOError
@@ -13,8 +11,8 @@ DEBUG_PRINT = 1
 
 # packet_is_being_delayed = False
 NO_MESSAGE_TOLERANCE = 3 # Total count of misses before removing the entry
-HELLO_MESSAGE_DELTA = 3000 # in milliseconds (TBD)
-LINK_STATE_MSG_TIMEOUT = 3000
+HELLO_MESSAGE_DELTA = 500 # in milliseconds (TBD)
+LINK_STATE_MSG_TIMEOUT = 10000
 
 aNodeWentDown = False
 helloTimestamps = {}
@@ -23,6 +21,9 @@ myLastHello = 0 # Timestamp of last hello message
 myLastLSM = 0
 myLSMSeqNo = 0
 myLSN = 1
+
+LOG = None
+
 
 def print_fwd_table(fwd_table):
     print(['   Dest IP  ', 'Dest Port', 'Next Hop IP', "Next hop port", "Cost"])
@@ -150,98 +151,142 @@ def forward_packet(data, my_adjacent_nodes,fwd_table,self_ip,self_port):
 
 # Souce of LSV will always be the immediate adjacent == cost will increment by 1
 def update_fwd_table(fwd_table, received_lsv, source_of_lsv, my_adjacent_nodes, route_topology):
-    global helloTimestamps
+    global helloTimestamps, LOG
 
     global aNodeWentDown
     if DEBUG_PRINT == 2:
         print("Current FWD table is {}".format(fwd_table))
     topo_updated = False
+    LOG.info("Received the LSV {} from the source {}".format(received_lsv, source_of_lsv))
     for each_lsv_entry in received_lsv:
         dest_ip_port = tuple([each_lsv_entry[0], int(each_lsv_entry[1])])
-        dest_cost = each_lsv_entry[2]
-        dest_path = each_lsv_entry[3]
+        dest_cost_from_the_lsv_node = each_lsv_entry[2]
+        dest_path_from_the_lsv_node = each_lsv_entry[3]
         for each_fwd_entry in fwd_table:
             # If we find the entry in the LSDB
             current_cost = None if each_fwd_entry[COST] is None else each_fwd_entry[COST]
-            incoming_cost = None if dest_cost is None else (int(dest_cost) + 1) # As the LSV is from the immediate neighbour
+            incoming_cost = None if dest_cost_from_the_lsv_node is None else (int(dest_cost_from_the_lsv_node) + 1) # As the LSV is from the immediate neighbour
 
             if each_fwd_entry[DESTINATION] == dest_ip_port:
                 # Special case, if the destination in the received LSV is actually adjacent for the current node
                 # The cost should be 1 for the destination and should not be updated
                 if dest_ip_port in my_adjacent_nodes:
                     continue
-                # If the next hop is still same for a dest but the cost has changed
-                #   we only update the cost to the new one (as other topology beyond might have changed)
-                # Later if we receive something lower from a different node, then we change it at that point for that node LSV
-                if each_fwd_entry[NEXT_HOP] == source_of_lsv:
-                    # Update only if the cost is different
-                    #   If the destination node is unreachable from the next hop, mark the next hop as None
-                    if incoming_cost is None:
-                        each_fwd_entry[NEXT_HOP] = None
-                        topo_updated = True
-                        if source_of_lsv in route_topology[dest_ip_port]:
-                            route_topology[dest_ip_port] = []
-                        break
-                    if each_fwd_entry[COST] != incoming_cost:
-                        each_fwd_entry[COST] = incoming_cost
-                        topo_updated = True
-                        break
-                else:
-                    # If the LSV says it can reach the destination through a different node with lower cost, we update
-                    #   First, if the node was previously unreachable and still is unreachable, we dont update
-                    # We update the costs to new only depending on the cost from the immediately adjacent node
-                    if source_of_lsv in my_adjacent_nodes:
-                        if incoming_cost is None and current_cost is None:
-                            continue
-                        #   If previously unreachable, but now reachable, we use it
-                        if (incoming_cost is not None and current_cost is None):
-                            if incoming_cost != len(each_lsv_entry[3]) + 1:
-                                route_topology[dest_ip_port] = []
-                                break
-                            each_fwd_entry[COST] = incoming_cost
-                            each_fwd_entry[NEXT_HOP] = source_of_lsv
-                            print("SAHIL Attaching the address: {} -> {}".format(dest_ip_port, route_topology[dest_ip_port]))
-                            route_topology[dest_ip_port] = each_lsv_entry[3]    
-                            if dest_ip_port not in route_topology[dest_ip_port]:
-                                route_topology[dest_ip_port].append(dest_ip_port)
-                            if source_of_lsv not in route_topology[dest_ip_port]:
-                                route_topology[dest_ip_port].append(source_of_lsv)
+                # If the node sending the LSV is my immediate node
+                if source_of_lsv in my_adjacent_nodes:
+                    # Case 1: We are unable to reach this particular destination from this adjacent node
+                    if incoming_cost is None and current_cost is not None:
+                        # Case 1.a: The next hop was this same node
+                        #       Update the next hop and set the node as unreachable
+                        LOG.critical("The incoming cost is None, but the current was not, Setting to NONE!")
+                        if each_fwd_entry[NEXT_HOP] == source_of_lsv:
+                            each_fwd_entry[COST] = None
+                            each_fwd_entry[NEXT_HOP] = None
+                            route_topology[each_fwd_entry[DESTINATION]] = []
                             topo_updated = True
-                            continue
-                        #   If previously reachable, but this node cannot be reached through the adjacent node
-                        if (incoming_cost is None and current_cost is not None):
-                            # if current_cost != len(each_lsv_entry[3]) + 1:
-                            #     route_topology[dest_ip_port] = []
-                            if each_fwd_entry[NEXT_HOP] == source_of_lsv:
-                                aNodeWentDown = True
-                                each_fwd_entry[COST] = None
-                                each_fwd_entry[NEXT_HOP] = None
-                                topo_updated = True
-                                dests_to_be_updated = []
-                                for dest, path in route_topology.items():
-                                    if dest_ip_port in path:
-                                        dests_to_be_updated.append(dest)
-                                for destination in dests_to_be_updated:
-                                    route_topology[destination] = []
-                                continue
-                            else:
-                                continue
-                        #   If was reachable and from the new node also reachable, check if the cost is lower. Update if yes
-                        if incoming_cost != current_cost:
-                            if incoming_cost < current_cost:
-                                each_fwd_entry[COST] = incoming_cost
-                                old_next_hop = each_fwd_entry[NEXT_HOP]
-                                route_topology[dest_ip_port].remove(old_next_hop)
-                                each_fwd_entry[NEXT_HOP] = source_of_lsv
-                                if source_of_lsv not in route_topology[dest_ip_port]:
-                                    route_topology[dest_ip_port].append(source_of_lsv)
-                                if DEBUG_PRINT:
-                                    print("Incoming cost for the destination {} is {}, "
-                                        "existing cost is {}. Updated the entry."
-                                        .format(dest_ip_port, incoming_cost, current_cost))
-                                topo_updated = True
+                        # Case 1.b: The next hop was NOT this node
+                        #       Do not update anything, we might be able to reach through some other node
+                        #       If that node also cannot reach, it will update with the above case
+                        else:
+                            pass
+                    # Case 2: The node was previously unreachable, but we got a path where the node is now reachable
+                    elif incoming_cost is not None and current_cost is None:
+                        # Case 2.a: Since the current cost is None, the next hop is also not there -- just update to the new value
+                        # Use the new path that we received
+                        each_fwd_entry[NEXT_HOP] = source_of_lsv
+                        each_fwd_entry[COST] = incoming_cost
+                        route_topology[each_fwd_entry[DESTINATION]] = dest_path_from_the_lsv_node
+                        # And append the next hop to it.
+                        route_topology[each_fwd_entry[DESTINATION]].append(source_of_lsv)
+                    # Case 3: The node was reachable and still is from this node, need to check the cost
+                    elif incoming_cost is not None and current_cost is not None:
+                        # Case 3.a: The LSV source advertizes a lesser cost to the node
+                        if incoming_cost < current_cost:
+                            # Update the next hop, path and the cost
+                            each_fwd_entry[NEXT_HOP] = source_of_lsv
+                            each_fwd_entry[COST] = incoming_cost
+                            route_topology[each_fwd_entry[DESTINATION]] = dest_path_from_the_lsv_node
+                            route_topology[each_fwd_entry[DESTINATION]].append(source_of_lsv)
+                        else:
+                            # Case 3.b: The LSV source has more cost to the node
+                            # In this case, we will send the new path (with lower cost) back to that node, which will done with the LSVR 
+                            pass
+                    # Case 4: If the dest was unreachable then and still is, skip
                     else:
                         pass
+
+                # # If the next hop is still same for a dest but the cost has changed
+                # #   we only update the cost to the new one (as other topology beyond might have changed)
+                # # Later if we receive something lower from a different node, then we change it at that point for that node LSV
+                # if each_fwd_entry[NEXT_HOP] == source_of_lsv:
+                #     # Update only if the cost is different
+                #     #   If the destination node is unreachable from the next hop, mark the next hop as None
+                #     if incoming_cost is None:
+                #         each_fwd_entry[NEXT_HOP] = None
+                #         topo_updated = True
+                #         if source_of_lsv in route_topology[dest_ip_port]:
+                #             route_topology[dest_ip_port] = []
+                #         break
+                #     if each_fwd_entry[COST] != incoming_cost:
+                #         each_fwd_entry[COST] = incoming_cost
+                #         topo_updated = True
+                #         break
+                # else:
+                #     # If the LSV says it can reach the destination through a different node with lower cost, we update
+                #     #   First, if the node was previously unreachable and still is unreachable, we dont update
+                #     # We update the costs to new only depending on the cost from the immediately adjacent node
+                #     if source_of_lsv in my_adjacent_nodes:
+                #         if incoming_cost is None and current_cost is None:
+                #             continue
+                #         #   If previously unreachable, but now reachable, we use it
+                #         if (incoming_cost is not None and current_cost is None):
+                #             if incoming_cost != len(each_lsv_entry[3]) + 1:
+                #                 route_topology[dest_ip_port] = []
+                #                 break
+                #             each_fwd_entry[COST] = incoming_cost
+                #             each_fwd_entry[NEXT_HOP] = source_of_lsv
+                #             print("SAHIL Attaching the address: {} -> {}".format(dest_ip_port, route_topology[dest_ip_port]))
+                #             route_topology[dest_ip_port] = each_lsv_entry[3]    
+                #             if dest_ip_port not in route_topology[dest_ip_port]:
+                #                 route_topology[dest_ip_port].append(dest_ip_port)
+                #             if source_of_lsv not in route_topology[dest_ip_port]:
+                #                 route_topology[dest_ip_port].append(source_of_lsv)
+                #             topo_updated = True
+                #             continue
+                #         #   If previously reachable, but this node cannot be reached through the adjacent node
+                #         if (incoming_cost is None and current_cost is not None):
+                #             # if current_cost != len(each_lsv_entry[3]) + 1:
+                #             #     route_topology[dest_ip_port] = []
+                #             if each_fwd_entry[NEXT_HOP] == source_of_lsv:
+                #                 aNodeWentDown = True
+                #                 each_fwd_entry[COST] = None
+                #                 each_fwd_entry[NEXT_HOP] = None
+                #                 topo_updated = True
+                #                 dests_to_be_updated = []
+                #                 for dest, path in route_topology.items():
+                #                     if dest_ip_port in path:
+                #                         dests_to_be_updated.append(dest)
+                #                 for destination in dests_to_be_updated:
+                #                     route_topology[destination] = []
+                #                 continue
+                #             else:
+                #                 continue
+                #         #   If was reachable and from the new node also reachable, check if the cost is lower. Update if yes
+                #         if incoming_cost != current_cost:
+                #             if incoming_cost < current_cost:
+                #                 each_fwd_entry[COST] = incoming_cost
+                #                 old_next_hop = each_fwd_entry[NEXT_HOP]
+                #                 route_topology[dest_ip_port].remove(old_next_hop)
+                #                 each_fwd_entry[NEXT_HOP] = source_of_lsv
+                #                 if source_of_lsv not in route_topology[dest_ip_port]:
+                #                     route_topology[dest_ip_port].append(source_of_lsv)
+                #                 if DEBUG_PRINT:
+                #                     print("Incoming cost for the destination {} is {}, "
+                #                         "existing cost is {}. Updated the entry."
+                #                         .format(dest_ip_port, incoming_cost, current_cost))
+                #                 topo_updated = True
+                #     else:
+                #         pass
     all_stabilized = all(x[COST] is not None for x in fwd_table)
     if aNodeWentDown and not topo_updated:
         print("\n\nAll routes have stabilized after 1(or more) node(s) went down!\n\n")
@@ -264,24 +309,23 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # # 2. Setup logging
-    # logging.basicConfig(
-    #     filename=args.logfilename,
-    #     filemode="w",
-    #     level=logging.ERROR,
-    #     format="%(asctime)s.%(msecs)03d - %(levelname)s - %(message)s",
-    #     # datefmt='%H:%M:%S',
-    #     datefmt='%H:%M:%S'
-    # )
-    # LOG = logging.getLogger(__name__)
-    # LOG.exception("Starting!")
+    # 2. Setup logging
+    logging.basicConfig(
+        filename="logs_machine_"+str(args.port) + ".log",
+        filemode="w",
+        level=logging.ERROR,
+        format="%(asctime)s.%(msecs)03d - %(levelname)s - %(message)s",
+        # datefmt='%H:%M:%S',
+        datefmt='%H:%M:%S'
+    )
+    LOG = logging.getLogger(__name__)
+    LOG.exception("Starting!")
     # 3. Read the topology and get the immediately adjacent nodes of current node
     self_name = socket.gethostname()
     self_ip = socket.gethostbyname(self_name)    
     my_adjacent_nodes = []
     self_host = tuple([self_ip, int(args.port)])
     full_network_topology = set() # List of all nodes in the current network
-    TTL = 5
 
     with open(args.topology_file, "r") as topo_file:
         # file_data = topo_file.readlines()
@@ -326,8 +370,10 @@ if __name__ == "__main__":
         route_topology[adj_node] = [adj_node]
         helloTimestamps[adj_node] = 0
         largestSeqNoPerNode[adj_node] = 0
-    print("ROUTE TOPOLOGY IS : {}", route_topology)
-    print("\n\n The INITIAL forwarding table is as follows: ")
+    TTL = len(fwd_table)
+    LOG.info("ROUTE TOPOLOGY IS : {}", route_topology)
+    # print("\n\n The INITIAL forwarding table is as follows: ")
+    LOG.info(f"Routing table is {fwd_table}")
     print_fwd_table(fwd_table)
     if DEBUG_PRINT:
         print("\nThe adjacent nodes for me are: ")
@@ -379,23 +425,17 @@ if __name__ == "__main__":
             elif packet_type == PACKET_TYPE_HELLO:
                 if DEBUG_PRINT == 2:
                     print(f"Received HELLO FROM MY NEIGHBOUR {source[0]}:{source[1]}")
+                # If the neighbour was considered down for some time, update the cost and the next hop for that node
                 if helloTimestamps.get(source, 0) == 0 and source in my_adjacent_nodes:
                     for fwd_entry in fwd_table:
                         if fwd_entry[DESTINATION] == source:
                             fwd_entry[COST] = 1
+                            route_topology[source] = [source]
                             send_link_state_message(my_adjacent_nodes, fwd_table, route_topology, TTL, self_ip, args.port)
-                            print("Topology changed. Node {} is now reachable. Current FWD table")
+                            print("Topology changed. Node {} is now reachable. Current FWD table".format(neighbour))
                             print_fwd_table(fwd_table)
                             break
                 helloTimestamps[source] = current_time
-                # print(helloTimestamps)
-                # if (node, port) not in fwd_table (The node was unavailable till now)
-                # Set the route to itself and set cost as 1 for the neighbour
-                if not any(entry[DESTINATION] == source for entry in fwd_table):
-                    fwd_table.append([source, source, 1])
-                    # TODO check how many TTLs to send
-                    send_link_state_message(my_adjacent_nodes, fwd_table, route_topology, TTL, self_ip,args.port)
-                route_topology[source] = [source]
             # Case C: If a Link State message or RouteTrace or RouteTraceReply
             elif packet_type in [PACKET_TYPE_LINK_STATE]:
                 #   Check the LSN and check if newer than what we had. Discard if not            
@@ -404,17 +444,22 @@ if __name__ == "__main__":
                     largestSeqNoPerNode[source] = seq_no
                     # TODO Topology change == update the route topology and fwd_table
                     received_lsv = decode_link_state_vector(inner_data)
-                    if DEBUG_PRINT == 1:
-                        print(f"The source {source}     SENT LSV -> {received_lsv}\n\n")
-                        print(largestSeqNoPerNode)
-                    topology_changed = False
-                    if inner_len >= 1: # Now we will decrement the TTL of the packet
-                        topology_changed = update_fwd_table(fwd_table, received_lsv, source, my_adjacent_nodes, route_topology)
-                        if topology_changed:
-                            #   Call forwardpacket to flood to neighbours
-                            print("topology_changed: The route topo is {}".format(route_topology))
-                            forward_packet(data, my_adjacent_nodes, fwd_table, self_ip, args.port) #TODO
-                    print("ROUTE TOPOLOGY NOW IS ::: {}".format(route_topology))
+                    if received_lsv is None:
+                        pass
+                    else:
+                        if DEBUG_PRINT == 1:
+                            print(f"The source {source}     SENT LSV -> {received_lsv}\n\n")
+                            print(largestSeqNoPerNode)
+                        topology_changed = False
+                        if inner_len >= 1: # Now we will decrement the TTL of the packet
+                            topology_changed = update_fwd_table(fwd_table, received_lsv, source, my_adjacent_nodes, route_topology)
+                            if topology_changed:
+                                send_link_state_message(my_adjacent_nodes, fwd_table, route_topology, TTL, self_ip, args.port)
+                                #   Call forwardpacket to flood to neighbours
+                                print("topology_changed: The route topo is {}".format(route_topology))
+                                forward_packet(data, my_adjacent_nodes, fwd_table, self_ip, args.port) #TODO
+                        print_fwd_table(fwd_table)
+                        # print("ROUTE TOPOLOGY NOW IS ::: {}".format(route_topology))
                 else:
                     pass
             elif packet_type in [PACKET_TYPE_ROUTE_TRACE, PACKET_TYPE_ROUTE_TRACE_REPLY]:
@@ -430,6 +475,7 @@ if __name__ == "__main__":
 
         # 4. Check the neighbors and update the fwd table as required
         deletion_entries = []
+        node_state_changed = False
         for neighbour, lastHelloTS in helloTimestamps.items():
             if current_time - lastHelloTS > NO_MESSAGE_TOLERANCE*HELLO_MESSAGE_DELTA:
                 aNodeWentDown = True
@@ -438,13 +484,17 @@ if __name__ == "__main__":
                     if (fwd_entry[NEXT_HOP] == neighbour):
                         # If it is an immediate neighbour, do not delete the next hop
                         # as the next hop will be that node only
-                        if fwd_entry[DESTINATION] in my_adjacent_nodes:
-                            fwd_entry[COST] = None
-                            deletion_entries.append(fwd_entry)
-                            continue  
-                        deletion_entries.append(fwd_entry)
-                        fwd_entry[NEXT_HOP] = None
                         fwd_entry[COST] = None
+                        deletion_entries.append(fwd_entry)
+                        if fwd_entry[DESTINATION] in my_adjacent_nodes:
+                            node_state_changed = True
+                            LOG.exception("Removed the entries {} as no HELLO received from them. Updated forwarding table:".format(fwd_entry))
+                            continue
+                        else:
+                            fwd_entry[NEXT_HOP] = None
+                            node_state_changed = True
+                            LOG.exception("Removed the entries {} as no HELLO received from them. Updated forwarding table:".format(fwd_entry))
+                            continue
                 topo_clear = []
                 for dest, path_entries in route_topology.items():
                     if neighbour in path_entries:
@@ -458,8 +508,9 @@ if __name__ == "__main__":
             if each_entry[NEXT_HOP] in largestSeqNoPerNode:
                 del largestSeqNoPerNode[each_entry[NEXT_HOP]]
         if deletion_entries:
-            print("Removed the entries {} as no HELLO received from them. Updated forwarding table:".format(','.join(str(ent[0]) for ent in deletion_entries)))
             print_fwd_table(fwd_table)
+        if node_state_changed:
+            send_link_state_message(my_adjacent_nodes, fwd_table, route_topology, TTL, self_ip, args.port)
 
         # 5. Send the newest LinkStateMessage to all neighbors if time has passed
         if current_time - myLastLSM > LINK_STATE_MSG_TIMEOUT:
