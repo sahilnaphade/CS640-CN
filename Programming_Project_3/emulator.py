@@ -94,8 +94,8 @@ def send_link_state_message(my_adj_nodes, fwd_table, route_topology, TTL,self_ip
                     socket.SOCK_DGRAM) # UDP
         for node in my_adj_nodes:
             payload = generate_link_state_vector(fwd_table, route_topology, node) # Will encode the full forwarding table until then as payload
-            if DEBUG_PRINT:
-                print(f"My LSV is :  {payload}")
+            # if DEBUG_PRINT:
+                # print(f"My LSV is :  {payload}")
             inner_payload = inner_payload_encapsulate(PACKET_TYPE_LINK_STATE, myLSMSeqNo, payload, TTL) # payload length in the inner header is TTL
             #Iterate through all the adjacent nodes and send the forwarding table
             packet = outer_payload_encapsulate(self_ip,port,node[0],node[1],inner_payload)
@@ -196,11 +196,11 @@ def buildForwardTable(fwd_table, received_lsv, source_of_lsv, my_adjacent_nodes,
     global helloTimestamps, LOG, unreachable_nodes
 
     global aNodeWentDown
-    if DEBUG_PRINT:
-        print("Current FWD table is {}".format(fwd_table))
+    # if DEBUG_PRINT:
+        # print("Current FWD table is {}".format(fwd_table))
     topo_updated = False
-    if DEBUG_PRINT:
-        print("Received the LSV {} from the source {}".format(received_lsv, source_of_lsv))
+    # if DEBUG_PRINT:
+        # print("Received the LSV {} from the source {}".format(received_lsv, source_of_lsv))
     for each_lsv_entry in received_lsv:
         dest_ip_port = tuple([each_lsv_entry[0], int(each_lsv_entry[1])])
         dest_cost_from_the_lsv_node = each_lsv_entry[2]
@@ -344,11 +344,8 @@ def readtopology(topology_file, self_ip, self_name, self_host, my_adjacent_nodes
         helloTimestamps[adj_node] = 0
         largestSeqNoPerNode[adj_node] = 0
     TTL = len(fwd_table)
-    print("ROUTE TOPOLOGY IS : {}", route_topology)
-    # print("\n\n The INITIAL forwarding table is as follows: ")
-    print(f"Routing table is {fwd_table}")
+    print(f"\n\n The Initial Forwarding table is: ")
     print_fwd_table(fwd_table)
-    # print_topology(whole_topo)
     if DEBUG_PRINT:
         print("\nThe adjacent nodes for me are: ")
         for adj_node in my_adjacent_nodes:
@@ -427,19 +424,19 @@ def createroutes(self_name, self_ip, self_host, my_adjacent_nodes, full_network_
                     if received_lsv is None:
                         pass
                     else:
-                        if DEBUG_PRINT:
-                            print(f"The source {source} SENT LSV -> {received_lsv}\n\n")
-                            print(largestSeqNoPerNode)
+                        # if DEBUG_PRINT:
+                            # print(f"The source {source} SENT LSV -> {received_lsv}\n\n")
+                            # print(largestSeqNoPerNode)
                         topology_changed = False
                         if inner_len >= 1: # Now we will decrement the TTL of the packet
                             topology_changed = buildForwardTable(fwd_table, received_lsv, source, my_adjacent_nodes, route_topology, whole_topo)
                             if topology_changed:
                                 send_link_state_message(my_adjacent_nodes, fwd_table, route_topology, TTL, self_ip, args.port)
                                 #   Call forwardpacket to flood to neighbours
-                                if DEBUG_PRINT:
-                                    print("topology_changed: The route topo is {}".format(route_topology))
                                 forwardpacket(data, my_adjacent_nodes, fwd_table, self_ip, args.port)
                                 print_fwd_table(fwd_table)
+                                if DEBUG_PRINT:
+                                    print("Topology changed -- The network topology is")
                                 print_topology(whole_topo)
                         # print("ROUTE TOPOLOGY NOW IS ::: {}".format(route_topology))
                 else:
@@ -528,5 +525,10 @@ if __name__ == "__main__":
 
     route_topology, fwd_table, helloTimestamps, largestSeqNoPerNode, TTL, whole_topo = readtopology(args.topology_file,self_ip, self_name, self_host, my_adjacent_nodes, full_network_topology, args.port)
     
+    if DEBUG_PRINT:
+        print("My neighbour nodes are:")
+        for adj in my_adjacent_nodes:
+            print(adj)
+        print("\n")
     createroutes(self_name, self_ip, self_host, my_adjacent_nodes, full_network_topology, route_topology, fwd_table, helloTimestamps, largestSeqNoPerNode, TTL, whole_topo)
 
