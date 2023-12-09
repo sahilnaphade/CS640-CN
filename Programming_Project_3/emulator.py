@@ -219,6 +219,7 @@ def build_ForwardTable(fwd_table, received_lsv, source_of_lsv, my_adjacent_nodes
                         route_topology[each_fwd_entry[DESTINATION]] = dest_path_from_the_lsv_node
                         # And append the next hop to it.
                         route_topology[each_fwd_entry[DESTINATION]].append(source_of_lsv)
+                        topo_updated = True
                     # Case 3: The node was reachable and still is from this node, need to check the cost
                     elif incoming_cost is not None and current_cost is not None:
                         # Case 3.a: The LSV source advertizes a lesser cost to the node
@@ -228,6 +229,7 @@ def build_ForwardTable(fwd_table, received_lsv, source_of_lsv, my_adjacent_nodes
                             each_fwd_entry[COST] = incoming_cost
                             route_topology[each_fwd_entry[DESTINATION]] = dest_path_from_the_lsv_node
                             route_topology[each_fwd_entry[DESTINATION]].append(source_of_lsv)
+                            topo_updated = True
                         else:
                             # Case 3.b: The LSV source has more cost to the node
                             # In this case, we will send the new path (with lower cost) back to that node, which will done with the LSVR 
@@ -293,25 +295,9 @@ def readtopology(topology_file, self_ip, self_name, self_host, my_adjacent_nodes
         for adj_node in my_adjacent_nodes:
             print(f"{adj_node[0]}:{adj_node[1]}")
     return route_topology, fwd_table, helloTimestamps, largestSeqNoPerNode, TTL
-            
-            
-if __name__ == "__main__":
-    # 1. Parse arguments
-    parser = argparse.ArgumentParser(description="Emulates network for UDP")
-    parser.add_argument("-p", "--port", dest="port", type=int, required=True, help="Port on which the emulator runs")
-    parser.add_argument("-f", "--filename", dest="topology_file", type=str, required=True, help="File containing information about the static forwarding table")
 
-    args = parser.parse_args()
-
-    # 3. Read the topology and get the immediately adjacent nodes of current node
-    self_name = socket.gethostname()
-    self_ip = socket.gethostbyname(self_name)
-    my_adjacent_nodes = []
-    self_host = tuple([self_ip, int(args.port)])
-    full_network_topology = set() # List of all nodes in the current network
-    
-    route_topology, fwd_table, helloTimestamps, largestSeqNoPerNode, TTL = readtopology(args.topology_file,self_ip, self_name, self_host, my_adjacent_nodes, full_network_topology, args.port)
-    
+def createroutes(self_name, self_ip, self_host, my_adjacent_nodes, full_network_topology, route_topology, fwd_table, helloTimestamps, largestSeqNoPerNode, TTL):
+    global myLastHello, myLastLSM, myLSMSeqNo, myLSN
     read_sock = None
     try:
         read_sock = socket.socket(socket.AF_INET, # Internet
@@ -387,7 +373,7 @@ if __name__ == "__main__":
                                 if DEBUG_PRINT:
                                     print("topology_changed: The route topo is {}".format(route_topology))
                                 forwardpacket(data, my_adjacent_nodes, fwd_table, self_ip, args.port)
-                        print_fwd_table(fwd_table)
+                                print_fwd_table(fwd_table)
                         # print("ROUTE TOPOLOGY NOW IS ::: {}".format(route_topology))
                 else:
                     pass
@@ -417,12 +403,12 @@ if __name__ == "__main__":
                         deletion_entries.append(fwd_entry)
                         if fwd_entry[DESTINATION] in my_adjacent_nodes:
                             node_state_changed = True
-                            print("Removed the entries {} as no HELLO received from them. Updated forwarding table:".format(fwd_entry))
+                            print("Updated the adjacent node {} as no HELLO received from them.".format(fwd_entry[DESTINATION]))
                             continue
                         else:
+                            print("Updated the destination {} as the next hop {} is down.".format(fwd_entry[DESTINATION], fwd_entry[NEXT_HOP]))
                             fwd_entry[NEXT_HOP] = None
                             node_state_changed = True
-                            print("Removed the entries {} as no HELLO received from them. Updated forwarding table:".format(fwd_entry))
                             continue
                 topo_clear = []
                 for dest, path_entries in route_topology.items():
@@ -437,6 +423,7 @@ if __name__ == "__main__":
             if each_entry[NEXT_HOP] in largestSeqNoPerNode:
                 del largestSeqNoPerNode[each_entry[NEXT_HOP]]
         if deletion_entries:
+            print("The forwarding table:")
             print_fwd_table(fwd_table)
         if node_state_changed:
             send_link_state_message(my_adjacent_nodes, fwd_table, route_topology, TTL, self_ip, args.port)
@@ -447,4 +434,25 @@ if __name__ == "__main__":
                 print("Timeout occured for LSM. Resending the latest LSV")
             send_link_state_message(my_adjacent_nodes, fwd_table, route_topology, TTL, self_ip,args.port)
         continue
+
+  
+            
+if __name__ == "__main__":
+    # 1. Parse arguments
+    parser = argparse.ArgumentParser(description="Emulates network for UDP")
+    parser.add_argument("-p", "--port", dest="port", type=int, required=True, help="Port on which the emulator runs")
+    parser.add_argument("-f", "--filename", dest="topology_file", type=str, required=True, help="File containing information about the static forwarding table")
+
+    args = parser.parse_args()
+
+    # 3. Read the topology and get the immediately adjacent nodes of current node
+    self_name = socket.gethostname()
+    self_ip = socket.gethostbyname(self_name)
+    my_adjacent_nodes = []
+    self_host = tuple([self_ip, int(args.port)])
+    full_network_topology = set() # List of all nodes in the current network
+    
+    route_topology, fwd_table, helloTimestamps, largestSeqNoPerNode, TTL = readtopology(args.topology_file,self_ip, self_name, self_host, my_adjacent_nodes, full_network_topology, args.port)
+    
+    createroutes(self_name, self_ip, self_host, my_adjacent_nodes, full_network_topology, route_topology, fwd_table, helloTimestamps, largestSeqNoPerNode, TTL)
 
