@@ -183,7 +183,8 @@ def append_own_send_info(payload, self_ip, self_port):
 
 def decode_lsv_route_trace(packet_inner_data):
     link_state_vector = []
-    lsv = packet_inner_data.decode('utf-8')
+    # lsv = str(packet_inner_data).decode('utf-8')
+    lsv = packet_inner_data
     ip_port_pairs = lsv.split("|")
     for each_pair in ip_port_pairs:
         dest_ip_addr, dest_port = each_pair.split(":")
