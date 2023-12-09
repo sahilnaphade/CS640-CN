@@ -154,8 +154,10 @@ def generate_link_state_vector(fwd_table, route_topology, my_adj_node):
 def decode_link_state_vector(packet_inner_data):
     link_state_vector = []
     lsv = packet_inner_data
+    if len(lsv) == 0:
+        return None
     lsv_entries = lsv.split("|")
-    print("LSV entries are {}\n\n".format("\n".join(lsv_entries)))
+    # print("LSV entries are {}\n\n".format("\n".join(lsv_entries)))
     for each_lsv_entry in lsv_entries:
         dest_ip_addr, dest_port, dest_cost, path_str = each_lsv_entry.split(":")
         all_ip_port_paths = []
