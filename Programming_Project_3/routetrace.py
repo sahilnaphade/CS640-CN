@@ -31,17 +31,17 @@ def debugprint(route_trace, TTL, src_hostname, src_port, dest_port, dest_hostnam
 	if route_trace:
 		print("\nRoute Packet")
 		print(f"Send Time:          {time.strftime('%Y-%m-%d %H:%M:%S')}.{milliseconds:03d}")
-		print(f"Sender Addr:     {str(ipaddress.ip_address(src_hostname))}:{src_port}")
-		print(f"Destination Addr:     {str(ipaddress.ip_address(dest_hostname))}:{dest_port}")
-		print(f"TTL :             {TTL}")
+		print(f"Sender Addr:     	{str(ipaddress.ip_address(src_hostname))}:{src_port}")
+		print(f"Destination Addr:   {str(ipaddress.ip_address(dest_hostname))}:{dest_port}")
+		print(f"TTL :             	{TTL}")
 		print("\n")
 	
 	else:
 		print("\nReply Packet")
 		print(f"Send Time:          {time.strftime('%Y-%m-%d %H:%M:%S')}.{milliseconds:03d}")
-		print(f"Sender Addr:     {str(ipaddress.ip_address(s_hostname))}:{s_port}")
-		print(f"Destination Addr:     {str(ipaddress.ip_address(d_hostname))}:{d_port}")
-		print(f"TTL :             {received_TTL}")
+		print(f"Sender Addr:     	{str(ipaddress.ip_address(s_hostname))}:{s_port}")
+		print(f"Destination Addr:   {str(ipaddress.ip_address(d_hostname))}:{d_port}")
+		print(f"TTL :             	{received_TTL}")
 		print("\n")
 		
 def main(route_port, src_hostname, src_port, dest_hostname, dest_port, debug):
