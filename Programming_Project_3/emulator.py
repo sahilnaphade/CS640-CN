@@ -1,12 +1,12 @@
 import argparse
-import logging
+# import logging
 import socket
 from time import time
 from io import BlockingIOError
 from utils import *
-from threading import Event, Thread
+# from threading import Event, Thread
 
-DEBUG_PRINT = 0
+DEBUG_PRINT = False
 
 # packet_is_being_delayed = False
 NO_MESSAGE_TOLERANCE = 3 # Total count of misses before removing the entry
@@ -33,16 +33,15 @@ def print_fwd_table(fwd_table):
             table.append([entry[DESTINATION][0],entry[DESTINATION][1],None,None, entry[COST]])
         else:
             table.append([entry[DESTINATION][0],entry[DESTINATION][1],entry[NEXT_HOP][0],entry[NEXT_HOP][1], entry[COST]])
-    
+
     for i in range(0,len(table)):
         table_dict[i] = table[i]
-    
+
     print ("\n {:<11} {:<13} {:<13} {:<17} {:<13} ".format('Dest IP','Dest Port','Next Hop IP', 'Next Hop Port', 'Cost'))
     print(63*"#")
     for k, v in table_dict.items():
         dest_ip, dest_port, next_hop_ip, next_hop_port, cost = v
         print ("{:<14} {:<12} {:<16} {:<13} {:<14}".format(str(dest_ip), str(dest_port), str(next_hop_ip), str(next_hop_port), str(cost)))
-    
     print("\n")
 
 def send_hello_message(src_ip, src_port, dest_ip, dest_port):
@@ -105,7 +104,7 @@ def forwardpacket(data, my_adjacent_nodes,fwd_table,self_ip,self_port):
                     packet = outer_payload_encapsulate(src_ip, src_port, node[0], node[1], inner_payload)
                     send_socket.sendto(packet,(node[0], node[1]))
             elif current_TTL == 0:
-                if DEBUG_PRINT == 1:
+                if DEBUG_PRINT:
                     print("TTL is 0. Not forwarding the LSM packet")
                 pass
         elif packet_type == PACKET_TYPE_ROUTE_TRACE:
@@ -115,15 +114,14 @@ def forwardpacket(data, my_adjacent_nodes,fwd_table,self_ip,self_port):
             if current_TTL == 0:
                 decoded_payload = decode_lsv_route_trace(payload) # This will give the ip and port of route trace
                 next_hop_for_packet = decoded_payload[0]
-    
+
                 inner_payload = inner_payload_encapsulate(PACKET_TYPE_ROUTE_TRACE_REPLY,0,payload,current_TTL)    
                 packet = outer_payload_encapsulate(self_ip,self_port,dest_ip,dest_port,inner_payload)
-                
+
                 # send reply packet back to the route trace applicaiton.
                 send_socket.sendto(packet, (next_hop_for_packet[0],next_hop_for_packet[1]) )
-                if DEBUG_PRINT == 1:
-                    print(f"The TTL for the route trace is 0. Replying back to the tracer @ {next_hop_for_packet[0]}:{next_hop_for_packet[1]}, the LSV is {' <- '.join(str((decoded_payload)))}")
-                
+                if DEBUG_PRINT:
+                    print(f"The TTL for the route trace is 0. Replying back to the tracer @ {next_hop_for_packet[0]}:{next_hop_for_packet[1]}, the LSV is {' <- '.join((str(each) for each in decoded_payload))}")
             else :
                 if (dest_ip,dest_port) == (self_ip,self_port):
                     print("Got the route trace packet with my destination.. Sending the reply \n")
@@ -133,24 +131,36 @@ def forwardpacket(data, my_adjacent_nodes,fwd_table,self_ip,self_port):
                     
                     inner_payload = inner_payload_encapsulate(PACKET_TYPE_ROUTE_TRACE_REPLY,0,payload,current_TTL)    
                     packet = outer_payload_encapsulate(self_ip,self_port,dest_ip,dest_port,inner_payload)
-                    if DEBUG_PRINT == 1:
+                    if DEBUG_PRINT:
                         print(f"Reply packet. Forwarding towards sender. Replying back to the tracer @ {next_hop_for_packet[0]}:{next_hop_for_packet[1]}, the payload is {payload}")
                     # send reply packet back to the route trace applicaiton.
                     send_socket.sendto(packet, (next_hop_for_packet[0],next_hop_for_packet[1]))
                 else :
                     for entry in fwd_table:                    
                         if entry[DESTINATION] == (dest_ip,dest_port): # Check the nexthop for the destination in the forwarding table
-                            current_TTL -= 1  # decrement the TTL and create new packet and send to the next hop.
+                            if entry[NEXT_HOP] is None: # The node went down and cannot be reached from this node, reply back to the routetrace
+                                if DEBUG_PRINT:
+                                    print("The destination {} requested by the route trace cannot be reached from this node.".format(entry[DESTINATION]))
+                                decoded_payload = decode_lsv_route_trace(payload) # This will give the ip and port of route trace
+                                next_hop_for_packet = decoded_payload[0]
 
-                            # Update own info to the payload (for the next hop while returning)
-                            # This will follow the same format as standard package, except COST
-                            #payload = append_own_send_info(payload, self_ip, self_port)
-                            inner_payload = inner_payload_encapsulate(PACKET_TYPE_ROUTE_TRACE,0,payload,current_TTL)
-                            
-                            packet = outer_payload_encapsulate(src_ip,src_port,dest_ip,dest_port,inner_payload)
-                            send_socket.sendto(packet,(entry[NEXT_HOP][0],entry[NEXT_HOP][1]))
-                            if DEBUG_PRINT == 1:
-                                print(f"The TTL for the route trace is {current_TTL}. Forwarding to the next HOP @ {entry[NEXT_HOP][0]}:{entry[NEXT_HOP][1]}, the payload is {payload}")
+                                inner_payload = inner_payload_encapsulate(PACKET_TYPE_ROUTE_TRACE_REPLY,0,payload+";UNREACHABLE",current_TTL)    
+                                packet = outer_payload_encapsulate(self_ip,self_port,dest_ip,dest_port,inner_payload)
+
+                                # send reply packet back to the route trace applicaiton.
+                                send_socket.sendto(packet, (next_hop_for_packet[0],next_hop_for_packet[1]) )
+                            else:
+                                current_TTL -= 1  # decrement the TTL and create new packet and send to the next hop.
+
+                                # Update own info to the payload (for the next hop while returning)
+                                # This will follow the same format as standard package, except COST
+                                #payload = append_own_send_info(payload, self_ip, self_port)
+                                inner_payload = inner_payload_encapsulate(PACKET_TYPE_ROUTE_TRACE,0,payload,current_TTL)
+                                
+                                packet = outer_payload_encapsulate(src_ip,src_port,dest_ip,dest_port,inner_payload)
+                                send_socket.sendto(packet,(entry[NEXT_HOP][0],entry[NEXT_HOP][1]))
+                                if DEBUG_PRINT:
+                                    print(f"The TTL for the route trace is {current_TTL}. Forwarding to the next HOP @ {entry[NEXT_HOP][0]}:{entry[NEXT_HOP][1]}, the payload is {payload}")
                             break
     except Exception as ex:
         raise (ex)
@@ -164,7 +174,7 @@ def build_ForwardTable(fwd_table, received_lsv, source_of_lsv, my_adjacent_nodes
     global helloTimestamps, LOG
 
     global aNodeWentDown
-    if DEBUG_PRINT == 1:
+    if DEBUG_PRINT:
         print("Current FWD table is {}".format(fwd_table))
     topo_updated = False
     if DEBUG_PRINT:
@@ -294,10 +304,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # 3. Read the topology and get the immediately adjacent nodes of current node
-    # self_name = socket.gethostname()
-    self_name = "localhost"
-    # self_ip = socket.gethostbyname(self_name)    
-    self_ip = socket.gethostbyname("127.0.0.1")
+    self_name = socket.gethostname()
+    self_ip = socket.gethostbyname(self_name)
     my_adjacent_nodes = []
     self_host = tuple([self_ip, int(args.port)])
     full_network_topology = set() # List of all nodes in the current network
@@ -328,8 +336,6 @@ if __name__ == "__main__":
             priority, src_ip, src_port, dst_ip, dst_port, length, packet_type, seq_no, inner_len, inner_data = outer_payload_decapsulate(data)
         #     # Check what is the type of the message received
             source = tuple([src_ip, int(src_port)])
-            if DEBUG_PRINT == 2:
-                print(f"{source}, {packet_type}, {seq_no}")
             # Case A: It is a Data/End/Request packet -- forward to next hop
             if packet_type in ['D', 'E', 'R']:
                 next_hop_found = False
@@ -340,15 +346,13 @@ if __name__ == "__main__":
                         send_packet(data, each_fwd_entry[NEXT_HOP][0], each_fwd_entry[NEXT_HOP][1])
                         break
                 if not next_hop_found:
-                    print(f"Destination {dst_ip}:{dst_port} not found in fwd table."
+                    print(f"Destination {dst_ip}:{dst_port} not found in fwd table for the packet of type {packet_type} from {source}."
                               " Dropping the packet.")
                     pass
             # Case B: If it is a HELLO packet from neighbour -> update the timestamp of Hello
-            # TODO Should check if it is a neighbour or not?
-            # TODO Verify from book if anything else is expected here
             elif packet_type == PACKET_TYPE_HELLO:
-                if DEBUG_PRINT == 1:
-                    print(f"Received HELLO FROM MY NEIGHBOUR {source[0]}:{source[1]}")
+                # if DEBUG_PRINT:
+                    # print(f"Received HELLO FROM MY NEIGHBOUR {source[0]}:{source[1]}")
                 # If the neighbour was considered down for some time, update the cost and the next hop for that node
                 if helloTimestamps.get(source, 0) == 0 and source in my_adjacent_nodes:
                     for fwd_entry in fwd_table:
@@ -371,8 +375,8 @@ if __name__ == "__main__":
                     if received_lsv is None:
                         pass
                     else:
-                        if DEBUG_PRINT == 1:
-                            print(f"The source {source}     SENT LSV -> {received_lsv}\n\n")
+                        if DEBUG_PRINT:
+                            print(f"The source {source} SENT LSV -> {received_lsv}\n\n")
                             print(largestSeqNoPerNode)
                         topology_changed = False
                         if inner_len >= 1: # Now we will decrement the TTL of the packet
@@ -380,7 +384,8 @@ if __name__ == "__main__":
                             if topology_changed:
                                 send_link_state_message(my_adjacent_nodes, fwd_table, route_topology, TTL, self_ip, args.port)
                                 #   Call forwardpacket to flood to neighbours
-                                print("topology_changed: The route topo is {}".format(route_topology))
+                                if DEBUG_PRINT:
+                                    print("topology_changed: The route topo is {}".format(route_topology))
                                 forwardpacket(data, my_adjacent_nodes, fwd_table, self_ip, args.port)
                         print_fwd_table(fwd_table)
                         # print("ROUTE TOPOLOGY NOW IS ::: {}".format(route_topology))
@@ -438,7 +443,7 @@ if __name__ == "__main__":
 
         # 5. Send the newest LinkStateMessage to all neighbors if time has passed
         if current_time - myLastLSM > LINK_STATE_MSG_TIMEOUT:
-            if DEBUG_PRINT == 1:
+            if DEBUG_PRINT:
                 print("Timeout occured for LSM. Resending the latest LSV")
             send_link_state_message(my_adjacent_nodes, fwd_table, route_topology, TTL, self_ip,args.port)
         continue

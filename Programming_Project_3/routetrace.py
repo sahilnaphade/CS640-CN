@@ -17,11 +17,6 @@ def create_header(src_ip_addr, src_port, dest_ip_addr, dest_port, TTL):
 
 
 def print_fwd_table(fwd_table):
-    # print(['Hop No ', 'IP', '  Port'])
-    # for entry in fwd_table:
-    #     print(str(entry[0]) + " " + str(entry[1]) + " " + str(entry[2]) , "\n")
-    # print("\n\n")
-	
 	print ("{:<12} {:<14} {:<1}".format('Hop #','IP','Port'))
 	print(32*"#")
 	
@@ -61,8 +56,8 @@ def main(route_port, src_hostname, src_port, dest_hostname, dest_port, debug):
 	current_time = time.time()
 	milliseconds = int((current_time - int(current_time)) * 1000)
 	
-	if debug:
-		debugprint(1, TTL, src_hostname, src_port, dest_port, dest_hostname, s_hostname, s_port, d_hostname, d_port, received_TTL)
+	# if debug:
+	# 	debugprint(1, TTL, src_hostname, src_port, dest_port, dest_hostname, s_hostname, s_port, d_hostname, d_port, received_TTL)
 		
 	sock_receive = socket.socket(socket.AF_INET, # Internet
 			socket.SOCK_DGRAM)
@@ -76,6 +71,9 @@ def main(route_port, src_hostname, src_port, dest_hostname, dest_port, debug):
 			debugprint(0, TTL, src_hostname, src_port, dest_port, dest_hostname, s_hostname, s_port, d_hostname, d_port, received_TTL)
 			
 		if packet_type == 'Y':
+			if "UNREACHABLE" in data:
+				print(f"The node {s_hostname}:{s_port} informed that the destination {d_hostname}:{d_port} is unreachable from it. Exiting...")
+				exit(0)
 			hop += 1
 			hop_table[hop] = ([s_hostname,s_port])
 			
@@ -102,7 +100,7 @@ if __name__ == "__main__":
 	parser.add_argument("-d", "--dest_hostname", dest="dest_hostname", type=str, required=True, help="Destination hostname")
 	parser.add_argument("-e", "--des_port", dest="dest_port", type=int, required=True, help="Port number on which destination is waiting")
 	parser.add_argument("-t", "--debug", dest="debug", type=float, default = 0, required=False, help="To enable or disable the printing")
-	
+
 
 	args = parser.parse_args()
 	for port_numbers in [args.route_port]:
