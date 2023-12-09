@@ -144,7 +144,6 @@ def forward_packet(data, my_adjacent_nodes,fwd_table,self_ip,self_port):
                             # Update own info to the payload (for the next hop while returning)
                             # This will follow the same format as standard package, except COST
                             #payload = append_own_send_info(payload, self_ip, self_port)
-
                             inner_payload = inner_payload_encapsulate(PACKET_TYPE_ROUTE_TRACE,0,payload,current_TTL)
                             
                             packet = outer_payload_encapsulate(src_ip,src_port,dest_ip,dest_port,inner_payload)
