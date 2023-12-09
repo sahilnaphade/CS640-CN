@@ -62,7 +62,8 @@ def send_link_state_message(my_adj_nodes, fwd_table,TTL,self_ip, port):  #TODO :
         sock = socket.socket(socket.AF_INET, # Internet
                     socket.SOCK_DGRAM) # UDP
         payload = generate_link_state_vector(fwd_table) # Will encode the full forwarding table until then as payload
-        print(payload)
+        if DEBUG_PRINT == 1:
+            print(payload)
         inner_payload = inner_payload_encapsulate(PACKET_TYPE_LINK_STATE, myLSMSeqNo, payload, TTL) # payload length in the inner header is TTL
         #Iterate through all the adjacent nodes and send the forwarding table
         for node in my_adj_nodes:
@@ -80,6 +81,7 @@ def send_link_state_message(my_adj_nodes, fwd_table,TTL,self_ip, port):  #TODO :
 def forward_packet(data, my_adjacent_nodes,fwd_table,self_ip,self_port):
     send_socket = None
     priority,src_ip,src_port,dest_ip,dest_port,length,packet_type,seq_no,current_TTL,payload = outer_payload_decapsulate(data)
+    print(f"This is the TTL from packet : {current_TTL} \n\n\n\n")
     try:
         send_socket = socket.socket(socket.AF_INET, # Internet
                     socket.SOCK_DGRAM) # UDP
@@ -97,48 +99,73 @@ def forward_packet(data, my_adjacent_nodes,fwd_table,self_ip,self_port):
                     print("TTL is 0. Not forwarding the LSM packet")
                 pass
         elif packet_type == PACKET_TYPE_ROUTE_TRACE:
+            print("Got Route Trace packet \n\n")
             # Check if current_TTL is zero, if yes then need to send the route trace reply packet to the route trace applicaiton
             # with src ip and port of its own and dest ip and port of the route trace packet
             if current_TTL == 0:
+                print("TTL is 0 so replying back.....\n\n\n\n\n")
                 decoded_payload = decode_lsv_route_trace(payload) # This will give the ip and port of route trace
-                current_TTL = len(decoded_payload) # Total number of hops, as we append all the IP:port to the payload
-                next_hop_for_packet = decoded_payload[-1]
+                #current_TTL = len(decoded_payload) # Total number of hops, as we append all the IP:port to the payload
+                next_hop_for_packet = decoded_payload[0]
+                
+                # payload = append_own_send_info(payload, self_ip, self_port)
                 inner_payload = inner_payload_encapsulate(PACKET_TYPE_ROUTE_TRACE_REPLY,0,payload,current_TTL)    
-                packet = outer_payload_encapsulate(self_ip,self_port,decoded_payload[0][0],decoded_payload[0][1],inner_payload)
+                packet = outer_payload_encapsulate(self_ip,self_port,dest_ip,dest_port,inner_payload)
                 
                 # send reply packet back to the route trace applicaiton.
                 send_socket.sendto(packet, (next_hop_for_packet[0],next_hop_for_packet[1]) )
-                if DEBUG_PRINT == 1:
-                    print(f"The TTL for the route trace is 0. Replying back to the tracer @ {next_hop_for_packet[0]}:{next_hop_for_packet[1]}, the LSV is {' <- '.join(decoded_payload)}")
+                if DEBUG_PRINT == 0:
+                
+                    print(f"The TTL for the route trace is 0. Replying back to the tracer @ {next_hop_for_packet[0]}:{next_hop_for_packet[1]}, the LSV is {' <- '.join(str((decoded_payload)))}")
                 
                 #TODO : Need to verify packet format consistency with the project requirements : source port, ip
             else :
-                for entry in fwd_table:
-                    if entry[DESTINATION] == dest_ip: # Check the nexthop for the destination in the forwarding table
-                        current_TTL -= 1  # decrement the TTL and create new packet and send to the next hop.
-                        # Update own info to the payload (for the next hop while returning)
-                        # This will follow the same format as standard package, except COST
-                        payload = append_own_send_info(payload, self_ip, self_port)
+                print(f"TTL is {current_TTL}\n\n\n")
+                if (dest_ip,dest_port) == (self_ip,self_port):
+                    print("Got the route trace packet with my destination.. Sending the reply \n\n")
+                    decoded_payload = decode_lsv_route_trace(payload) # This will give the ip and port of route trace
+                    #current_TTL = current_TTL - 1 # Total number of hops, as we append all the IP:port to the payload
+                    next_hop_for_packet = decoded_payload[0]
+                    
+                    
+                    inner_payload = inner_payload_encapsulate(PACKET_TYPE_ROUTE_TRACE_REPLY,0,payload,current_TTL)    
+                    packet = outer_payload_encapsulate(self_ip,self_port,dest_ip,dest_port,inner_payload)
+                    if DEBUG_PRINT == 0:
+                        print(f"Reply packet. Forwarding towards sender. Replying back to the tracer @ {next_hop_for_packet[0]}:{next_hop_for_packet[1]}, the payload is {payload}")
+                    # send reply packet back to the route trace applicaiton.
+                    send_socket.sendto(packet, (next_hop_for_packet[0],next_hop_for_packet[1]))
+                else :
+                    for entry in fwd_table:                    
+                        if entry[DESTINATION] == (dest_ip,dest_port): # Check the nexthop for the destination in the forwarding table
+                            current_TTL -= 1  # decrement the TTL and create new packet and send to the next hop.
+                            print(f"TTL Decremented : {current_TTL} \n\n\n")
+                            # Update own info to the payload (for the next hop while returning)
+                            # This will follow the same format as standard package, except COST
+                            #payload = append_own_send_info(payload, self_ip, self_port)
 
-                        inner_payload = inner_payload_encapsulate(PACKET_TYPE_ROUTE_TRACE,0,payload,TTL)
-                        
-                        packet = outer_payload_encapsulate(src_ip,src_port,dest_ip,dest_port,inner_payload)
-                        send_socket.sendto(packet,(entry[NEXT_HOP][0],entry[NEXT_HOP][1]))
-                        if DEBUG_PRINT:
-                            print(f"The TTL for the route trace is {current_TTL}. Forwarding to the next HOP @ {entry[NEXT_HOP][0]}:{entry[NEXT_HOP][1]}, the payload is {payload}")
-                        break
-        elif packet_type == PACKET_TYPE_ROUTE_TRACE_REPLY:
-            # If the packet is simply going back, get the last TTLth record in the payload, that will be our next hop
-            # TODO check
-            decoded_payload = decode_lsv_route_trace(payload) # This will give the ip and port of route trace
-            current_TTL = current_TTL - 1 # Total number of hops, as we append all the IP:port to the payload
-            next_hop_for_packet = decoded_payload[(-1)*(len(decoded_payload) + current_TTL)]
-            inner_payload = inner_payload_encapsulate(PACKET_TYPE_ROUTE_TRACE_REPLY,0,payload,current_TTL)    
-            packet = outer_payload_encapsulate(self_ip,self_port,decoded_payload[0][0],decoded_payload[0][1],inner_payload)
-            if DEBUG_PRINT:
-                print(f"Reply packet. Forwarding towards sender. Replying back to the tracer @ {next_hop_for_packet[0]}:{next_hop_for_packet[1]}, the payload is {payload}")
-            # send reply packet back to the route trace applicaiton.
-            send_socket.sendto(packet, (next_hop_for_packet[0],next_hop_for_packet[1]) )
+                            inner_payload = inner_payload_encapsulate(PACKET_TYPE_ROUTE_TRACE,0,payload,current_TTL)
+                            
+                            packet = outer_payload_encapsulate(src_ip,src_port,dest_ip,dest_port,inner_payload)
+                            send_socket.sendto(packet,(entry[NEXT_HOP][0],entry[NEXT_HOP][1]))
+                            if DEBUG_PRINT == 0:
+                                print(f"The TTL for the route trace is {current_TTL}. Forwarding to the next HOP @ {entry[NEXT_HOP][0]}:{entry[NEXT_HOP][1]}, the payload is {payload}")
+                            break
+        # elif packet_type == PACKET_TYPE_ROUTE_TRACE_REPLY:
+        #     # If the packet is simply going back, get the last TTLth record in the payload, that will be our next hop
+        #     # TODO check
+        #     decoded_payload = decode_lsv_route_trace(payload) # This will give the ip and port of route trace
+        #     print(f"Decoded Paylaod {decoded_payload}\n\n")
+        #     #current_TTL = current_TTL - 1 # Total number of hops, as we append all the IP:port to the payload
+        #     print(current_TTL)
+        #     next_hop_for_packet = decoded_payload[0]
+        #     print(f"Next hop from packet {next_hop_for_packet} \n\n")
+        #     payload = append_own_send_info(payload, self_ip, self_port)
+        #     inner_payload = inner_payload_encapsulate(PACKET_TYPE_ROUTE_TRACE_REPLY,0,payload,current_TTL)    
+        #     packet = outer_payload_encapsulate(self_ip,self_port,dest_ip,dest_port,inner_payload)
+        #     if DEBUG_PRINT == 0:
+        #         print(f"Reply packet. Forwarding towards sender. Replying back to the tracer @ {next_hop_for_packet[0]}:{next_hop_for_packet[1]}, the payload is {payload}")
+        #     # send reply packet back to the route trace applicaiton.
+        #     send_socket.sendto(packet, (next_hop_for_packet[0],next_hop_for_packet[1]) )
     except Exception as ex:
         raise (ex)
     finally:
@@ -237,8 +264,9 @@ if __name__ == "__main__":
     # LOG = logging.getLogger(__name__)
     # LOG.exception("Starting!")
     # 3. Read the topology and get the immediately adjacent nodes of current node
-    self_name = socket.gethostname()
-    self_ip = socket.gethostbyname(self_name)    
+    # self_name = socket.gethostname()
+    self_name = "localhost"
+    self_ip = "127.0.0.1"    
     my_adjacent_nodes = []
     self_host = tuple([self_ip, int(args.port)])
     full_network_topology = set() # List of all nodes in the current network
