@@ -2,12 +2,11 @@ import argparse
 import logging
 import socket
 from time import time
-# from prettytable import PrettyTable
 from io import BlockingIOError
 from utils import *
 from threading import Event, Thread
 
-DEBUG_PRINT = 1
+DEBUG_PRINT = 0
 
 # packet_is_being_delayed = False
 NO_MESSAGE_TOLERANCE = 3 # Total count of misses before removing the entry
@@ -26,16 +25,25 @@ LOG = None
 
 
 def print_fwd_table(fwd_table):
-    print(['   Dest IP  ', 'Dest Port', 'Next Hop IP', "Next hop port", "Cost"])
+    
+    table_dict = {}
+    table = []
     for entry in fwd_table:
-        destination = entry[DESTINATION]
-        next_hop = entry[NEXT_HOP]
-        cost = entry[COST]
-        if next_hop == None:
-            print([destination[0], "  "+str(destination[1])+"   ", "None", "None", cost])
+        if entry[NEXT_HOP] is None or entry[DESTINATION] is None:
+            table.append([entry[DESTINATION][0],entry[DESTINATION][1],None,None, entry[COST]])
         else:
-            print([destination[0], destination[1], next_hop[0], next_hop[1], cost])
-    print("\n\n")
+            table.append([entry[DESTINATION][0],entry[DESTINATION][1],entry[NEXT_HOP][0],entry[NEXT_HOP][1], entry[COST]])
+    
+    for i in range(0,len(table)):
+        table_dict[i] = table[i]
+    
+    print ("\n {:<11} {:<13} {:<13} {:<17} {:<13} ".format('Dest IP','Dest Port','Next Hop IP', 'Next Hop Port', 'Cost'))
+    print(63*"#")
+    for k, v in table_dict.items():
+        dest_ip, dest_port, next_hop_ip, next_hop_port, cost = v
+        print ("{:<14} {:<12} {:<16} {:<13} {:<14}".format(str(dest_ip), str(dest_port), str(next_hop_ip), str(next_hop_port), str(cost)))
+    
+    print("\n")
 
 def send_hello_message(src_ip, src_port, dest_ip, dest_port):
     global myLSN, myLastHello
@@ -65,24 +73,24 @@ def send_link_state_message(my_adj_nodes, fwd_table, route_topology, TTL,self_ip
                     socket.SOCK_DGRAM) # UDP
         for node in my_adj_nodes:
             payload = generate_link_state_vector(fwd_table, route_topology, node) # Will encode the full forwarding table until then as payload
-            print(payload)
+            if DEBUG_PRINT:
+                print(f"My LSV is :  {payload}")
             inner_payload = inner_payload_encapsulate(PACKET_TYPE_LINK_STATE, myLSMSeqNo, payload, TTL) # payload length in the inner header is TTL
             #Iterate through all the adjacent nodes and send the forwarding table
             packet = outer_payload_encapsulate(self_ip,port,node[0],node[1],inner_payload)
             sock.sendto(packet,(node[0],node[1]))
         myLastLSM = round(time() * 1000)
         if DEBUG_PRINT:
-            print(f"Sending the LinkStateMessage to the neighbours at time {myLastLSM}")
+            print(f"Sending the LinkStateMessage to the neighbours at time {myLastLSM} \n")
     except Exception as ex:
         raise ex
     finally:
         if sock is not None:
             sock.close()
 
-def forward_packet(data, my_adjacent_nodes,fwd_table,self_ip,self_port):
+def forwardpacket(data, my_adjacent_nodes,fwd_table,self_ip,self_port):
     send_socket = None
     priority,src_ip,src_port,dest_ip,dest_port,length,packet_type,seq_no,current_TTL,payload = outer_payload_decapsulate(data)
-    print(f"This is the TTL from packet : {current_TTL} \n\n\n\n")
     try:
         send_socket = socket.socket(socket.AF_INET, # Internet
                     socket.SOCK_DGRAM) # UDP
@@ -101,38 +109,31 @@ def forward_packet(data, my_adjacent_nodes,fwd_table,self_ip,self_port):
                     print("TTL is 0. Not forwarding the LSM packet")
                 pass
         elif packet_type == PACKET_TYPE_ROUTE_TRACE:
-            print("Got Route Trace packet \n\n")
+            print("Got Route Trace packet \n")
             # Check if current_TTL is zero, if yes then need to send the route trace reply packet to the route trace applicaiton
             # with src ip and port of its own and dest ip and port of the route trace packet
             if current_TTL == 0:
-                print("TTL is 0 so replying back.....\n\n\n\n\n")
                 decoded_payload = decode_lsv_route_trace(payload) # This will give the ip and port of route trace
-                #current_TTL = len(decoded_payload) # Total number of hops, as we append all the IP:port to the payload
                 next_hop_for_packet = decoded_payload[0]
-                
-                # payload = append_own_send_info(payload, self_ip, self_port)
+    
                 inner_payload = inner_payload_encapsulate(PACKET_TYPE_ROUTE_TRACE_REPLY,0,payload,current_TTL)    
                 packet = outer_payload_encapsulate(self_ip,self_port,dest_ip,dest_port,inner_payload)
                 
                 # send reply packet back to the route trace applicaiton.
                 send_socket.sendto(packet, (next_hop_for_packet[0],next_hop_for_packet[1]) )
-                if DEBUG_PRINT == 0:
-                
+                if DEBUG_PRINT == 1:
                     print(f"The TTL for the route trace is 0. Replying back to the tracer @ {next_hop_for_packet[0]}:{next_hop_for_packet[1]}, the LSV is {' <- '.join(str((decoded_payload)))}")
                 
-                #TODO : Need to verify packet format consistency with the project requirements : source port, ip
             else :
-                print(f"TTL is {current_TTL}\n\n\n")
                 if (dest_ip,dest_port) == (self_ip,self_port):
-                    print("Got the route trace packet with my destination.. Sending the reply \n\n")
+                    print("Got the route trace packet with my destination.. Sending the reply \n")
                     decoded_payload = decode_lsv_route_trace(payload) # This will give the ip and port of route trace
                     #current_TTL = current_TTL - 1 # Total number of hops, as we append all the IP:port to the payload
                     next_hop_for_packet = decoded_payload[0]
                     
-                    
                     inner_payload = inner_payload_encapsulate(PACKET_TYPE_ROUTE_TRACE_REPLY,0,payload,current_TTL)    
                     packet = outer_payload_encapsulate(self_ip,self_port,dest_ip,dest_port,inner_payload)
-                    if DEBUG_PRINT == 0:
+                    if DEBUG_PRINT == 1:
                         print(f"Reply packet. Forwarding towards sender. Replying back to the tracer @ {next_hop_for_packet[0]}:{next_hop_for_packet[1]}, the payload is {payload}")
                     # send reply packet back to the route trace applicaiton.
                     send_socket.sendto(packet, (next_hop_for_packet[0],next_hop_for_packet[1]))
@@ -140,7 +141,7 @@ def forward_packet(data, my_adjacent_nodes,fwd_table,self_ip,self_port):
                     for entry in fwd_table:                    
                         if entry[DESTINATION] == (dest_ip,dest_port): # Check the nexthop for the destination in the forwarding table
                             current_TTL -= 1  # decrement the TTL and create new packet and send to the next hop.
-                            print(f"TTL Decremented : {current_TTL} \n\n\n")
+
                             # Update own info to the payload (for the next hop while returning)
                             # This will follow the same format as standard package, except COST
                             #payload = append_own_send_info(payload, self_ip, self_port)
@@ -148,25 +149,9 @@ def forward_packet(data, my_adjacent_nodes,fwd_table,self_ip,self_port):
                             
                             packet = outer_payload_encapsulate(src_ip,src_port,dest_ip,dest_port,inner_payload)
                             send_socket.sendto(packet,(entry[NEXT_HOP][0],entry[NEXT_HOP][1]))
-                            if DEBUG_PRINT == 0:
+                            if DEBUG_PRINT == 1:
                                 print(f"The TTL for the route trace is {current_TTL}. Forwarding to the next HOP @ {entry[NEXT_HOP][0]}:{entry[NEXT_HOP][1]}, the payload is {payload}")
                             break
-        # elif packet_type == PACKET_TYPE_ROUTE_TRACE_REPLY:
-        #     # If the packet is simply going back, get the last TTLth record in the payload, that will be our next hop
-        #     # TODO check
-        #     decoded_payload = decode_lsv_route_trace(payload) # This will give the ip and port of route trace
-        #     print(f"Decoded Paylaod {decoded_payload}\n\n")
-        #     #current_TTL = current_TTL - 1 # Total number of hops, as we append all the IP:port to the payload
-        #     print(current_TTL)
-        #     next_hop_for_packet = decoded_payload[0]
-        #     print(f"Next hop from packet {next_hop_for_packet} \n\n")
-        #     payload = append_own_send_info(payload, self_ip, self_port)
-        #     inner_payload = inner_payload_encapsulate(PACKET_TYPE_ROUTE_TRACE_REPLY,0,payload,current_TTL)    
-        #     packet = outer_payload_encapsulate(self_ip,self_port,dest_ip,dest_port,inner_payload)
-        #     if DEBUG_PRINT == 0:
-        #         print(f"Reply packet. Forwarding towards sender. Replying back to the tracer @ {next_hop_for_packet[0]}:{next_hop_for_packet[1]}, the payload is {payload}")
-        #     # send reply packet back to the route trace applicaiton.
-        #     send_socket.sendto(packet, (next_hop_for_packet[0],next_hop_for_packet[1]) )
     except Exception as ex:
         raise (ex)
     finally:
@@ -175,14 +160,15 @@ def forward_packet(data, my_adjacent_nodes,fwd_table,self_ip,self_port):
 
 
 # Souce of LSV will always be the immediate adjacent == cost will increment by 1
-def update_fwd_table(fwd_table, received_lsv, source_of_lsv, my_adjacent_nodes, route_topology):
+def build_ForwardTable(fwd_table, received_lsv, source_of_lsv, my_adjacent_nodes, route_topology):
     global helloTimestamps, LOG
 
     global aNodeWentDown
-    if DEBUG_PRINT == 2:
+    if DEBUG_PRINT == 1:
         print("Current FWD table is {}".format(fwd_table))
     topo_updated = False
-    LOG.info("Received the LSV {} from the source {}".format(received_lsv, source_of_lsv))
+    if DEBUG_PRINT:
+        print("Received the LSV {} from the source {}".format(received_lsv, source_of_lsv))
     for each_lsv_entry in received_lsv:
         dest_ip_port = tuple([each_lsv_entry[0], int(each_lsv_entry[1])])
         dest_cost_from_the_lsv_node = each_lsv_entry[2]
@@ -203,7 +189,7 @@ def update_fwd_table(fwd_table, received_lsv, source_of_lsv, my_adjacent_nodes, 
                     if incoming_cost is None and current_cost is not None:
                         # Case 1.a: The next hop was this same node
                         #       Update the next hop and set the node as unreachable
-                        LOG.critical("The incoming cost is None, but the current was not, Setting to NONE!")
+                        # LOG.critical("The incoming cost is None, but the current was not, Setting to NONE!")
                         if each_fwd_entry[NEXT_HOP] == source_of_lsv:
                             each_fwd_entry[COST] = None
                             each_fwd_entry[NEXT_HOP] = None
@@ -239,79 +225,6 @@ def update_fwd_table(fwd_table, received_lsv, source_of_lsv, my_adjacent_nodes, 
                     # Case 4: If the dest was unreachable then and still is, skip
                     else:
                         pass
-
-                # # If the next hop is still same for a dest but the cost has changed
-                # #   we only update the cost to the new one (as other topology beyond might have changed)
-                # # Later if we receive something lower from a different node, then we change it at that point for that node LSV
-                # if each_fwd_entry[NEXT_HOP] == source_of_lsv:
-                #     # Update only if the cost is different
-                #     #   If the destination node is unreachable from the next hop, mark the next hop as None
-                #     if incoming_cost is None:
-                #         each_fwd_entry[NEXT_HOP] = None
-                #         topo_updated = True
-                #         if source_of_lsv in route_topology[dest_ip_port]:
-                #             route_topology[dest_ip_port] = []
-                #         break
-                #     if each_fwd_entry[COST] != incoming_cost:
-                #         each_fwd_entry[COST] = incoming_cost
-                #         topo_updated = True
-                #         break
-                # else:
-                #     # If the LSV says it can reach the destination through a different node with lower cost, we update
-                #     #   First, if the node was previously unreachable and still is unreachable, we dont update
-                #     # We update the costs to new only depending on the cost from the immediately adjacent node
-                #     if source_of_lsv in my_adjacent_nodes:
-                #         if incoming_cost is None and current_cost is None:
-                #             continue
-                #         #   If previously unreachable, but now reachable, we use it
-                #         if (incoming_cost is not None and current_cost is None):
-                #             if incoming_cost != len(each_lsv_entry[3]) + 1:
-                #                 route_topology[dest_ip_port] = []
-                #                 break
-                #             each_fwd_entry[COST] = incoming_cost
-                #             each_fwd_entry[NEXT_HOP] = source_of_lsv
-                #             print("SAHIL Attaching the address: {} -> {}".format(dest_ip_port, route_topology[dest_ip_port]))
-                #             route_topology[dest_ip_port] = each_lsv_entry[3]    
-                #             if dest_ip_port not in route_topology[dest_ip_port]:
-                #                 route_topology[dest_ip_port].append(dest_ip_port)
-                #             if source_of_lsv not in route_topology[dest_ip_port]:
-                #                 route_topology[dest_ip_port].append(source_of_lsv)
-                #             topo_updated = True
-                #             continue
-                #         #   If previously reachable, but this node cannot be reached through the adjacent node
-                #         if (incoming_cost is None and current_cost is not None):
-                #             # if current_cost != len(each_lsv_entry[3]) + 1:
-                #             #     route_topology[dest_ip_port] = []
-                #             if each_fwd_entry[NEXT_HOP] == source_of_lsv:
-                #                 aNodeWentDown = True
-                #                 each_fwd_entry[COST] = None
-                #                 each_fwd_entry[NEXT_HOP] = None
-                #                 topo_updated = True
-                #                 dests_to_be_updated = []
-                #                 for dest, path in route_topology.items():
-                #                     if dest_ip_port in path:
-                #                         dests_to_be_updated.append(dest)
-                #                 for destination in dests_to_be_updated:
-                #                     route_topology[destination] = []
-                #                 continue
-                #             else:
-                #                 continue
-                #         #   If was reachable and from the new node also reachable, check if the cost is lower. Update if yes
-                #         if incoming_cost != current_cost:
-                #             if incoming_cost < current_cost:
-                #                 each_fwd_entry[COST] = incoming_cost
-                #                 old_next_hop = each_fwd_entry[NEXT_HOP]
-                #                 route_topology[dest_ip_port].remove(old_next_hop)
-                #                 each_fwd_entry[NEXT_HOP] = source_of_lsv
-                #                 if source_of_lsv not in route_topology[dest_ip_port]:
-                #                     route_topology[dest_ip_port].append(source_of_lsv)
-                #                 if DEBUG_PRINT:
-                #                     print("Incoming cost for the destination {} is {}, "
-                #                         "existing cost is {}. Updated the entry."
-                #                         .format(dest_ip_port, incoming_cost, current_cost))
-                #                 topo_updated = True
-                #     else:
-                #         pass
     all_stabilized = all(x[COST] is not None for x in fwd_table)
     if aNodeWentDown and not topo_updated:
         print("\n\nAll routes have stabilized after 1(or more) node(s) went down!\n\n")
@@ -324,44 +237,14 @@ def update_fwd_table(fwd_table, received_lsv, source_of_lsv, my_adjacent_nodes, 
     return topo_updated
 
 
-if __name__ == "__main__":
-    # 1. Parse arguments
-    parser = argparse.ArgumentParser(description="Emulates network for UDP")
-    parser.add_argument("-p", "--port", dest="port", type=int, required=True, help="Port on which the emulator runs")
-    # parser.add_argument("-q", "--queue-size", dest="queue_size", type=int, required=True, help="Size of the message queue on the current network emulator")
-    parser.add_argument("-f", "--filename", dest="topology_file", type=str, required=True, help="File containing information about the static forwarding table")
-    # parser.add_argument("-l", "--logfile", dest="logfilename", type=str, required=True, help="Name of the log file")
-
-    args = parser.parse_args()
-
-    # 2. Setup logging
-    logging.basicConfig(
-        filename="logs_machine_"+str(args.port) + ".log",
-        filemode="w",
-        level=logging.ERROR,
-        format="%(asctime)s.%(msecs)03d - %(levelname)s - %(message)s",
-        # datefmt='%H:%M:%S',
-        datefmt='%H:%M:%S'
-    )
-    LOG = logging.getLogger(__name__)
-    LOG.exception("Starting!")
-    # 3. Read the topology and get the immediately adjacent nodes of current node
-    self_name = socket.gethostname()
-    # self_name = "localhost"
-    self_ip = socket.gethostbyname(self_name)    
-    my_adjacent_nodes = []
-    self_host = tuple([self_ip, int(args.port)])
-    full_network_topology = set() # List of all nodes in the current network
-
-    with open(args.topology_file, "r") as topo_file:
-        # file_data = topo_file.readlines()
+def readtopology(topology_file, self_ip, self_name, self_host, my_adjacent_nodes, full_network_topology, port):
+    with open(topology_file, "r") as topo_file:
+ 
         for each_adjacent_topology in topo_file:
             each_adjacent_topology = each_adjacent_topology.rstrip('\n')
             if each_adjacent_topology != '\n':
                 # Check if we are reading the adjacent nodes for the current node
                 current_topology = each_adjacent_topology.split(" ")
-                # print(current_topology)
-
                 source_ip, source_port = current_topology[0].split(',')
 
                 full_network_topology.add(tuple([source_ip, int(source_port)]))
@@ -374,37 +257,53 @@ if __name__ == "__main__":
                             if this_node_ip == self_ip and int(this_node_port) == args.port:
                                 continue
                             my_adjacent_nodes.append(tuple([this_node_ip, int(this_node_port)]))
-                        # my_adjacent_nodes.append([tuple(current_topology[index].split(",")) for index in range(1, len(current_topology))])
-    # print("My adjacent nodes are {}".format(my_adjacent_nodes))
-    # print("Full N/W topo: {}".format(full_network_topology))
     # 3. Initialize forwarding table (list of tuples)
     # Any tuple: ((dest_ip, dest_port), (next_hop_ip, next_hop_port), cost, isvalid)
     # The initial entry will be only the adjacent nodes
     route_topology = {}
     fwd_table = []
     for each_node in full_network_topology:
-        # print("This node is {}".format(each_node))
-        # print("My adjacent nodes are {}".format(my_adjacent_nodes))
-        # print("Is this current node in my adj list {}".format(each_node in my_adjacent_nodes))
         if (not (each_node in my_adjacent_nodes)) and (each_node != self_host):
             fwd_table.append([each_node, None, None])
             route_topology[each_node] = []
     for adj_node in my_adjacent_nodes:
-        if adj_node[0] == self_ip and adj_node[1] == args.port:
+        if adj_node[0] == self_ip and adj_node[1] == port:
             continue
         fwd_table.append([adj_node, adj_node, 1])
         route_topology[adj_node] = [adj_node]
         helloTimestamps[adj_node] = 0
         largestSeqNoPerNode[adj_node] = 0
     TTL = len(fwd_table)
-    LOG.info("ROUTE TOPOLOGY IS : {}", route_topology)
+    print("ROUTE TOPOLOGY IS : {}", route_topology)
     # print("\n\n The INITIAL forwarding table is as follows: ")
-    LOG.info(f"Routing table is {fwd_table}")
+    print(f"Routing table is {fwd_table}")
     print_fwd_table(fwd_table)
     if DEBUG_PRINT:
         print("\nThe adjacent nodes for me are: ")
         for adj_node in my_adjacent_nodes:
             print(f"{adj_node[0]}:{adj_node[1]}")
+    return route_topology, fwd_table, helloTimestamps, largestSeqNoPerNode, TTL
+            
+            
+if __name__ == "__main__":
+    # 1. Parse arguments
+    parser = argparse.ArgumentParser(description="Emulates network for UDP")
+    parser.add_argument("-p", "--port", dest="port", type=int, required=True, help="Port on which the emulator runs")
+    parser.add_argument("-f", "--filename", dest="topology_file", type=str, required=True, help="File containing information about the static forwarding table")
+
+    args = parser.parse_args()
+
+    # 3. Read the topology and get the immediately adjacent nodes of current node
+    # self_name = socket.gethostname()
+    self_name = "localhost"
+    # self_ip = socket.gethostbyname(self_name)    
+    self_ip = socket.gethostbyname("127.0.0.1")
+    my_adjacent_nodes = []
+    self_host = tuple([self_ip, int(args.port)])
+    full_network_topology = set() # List of all nodes in the current network
+    
+    route_topology, fwd_table, helloTimestamps, largestSeqNoPerNode, TTL = readtopology(args.topology_file,self_ip, self_name, self_host, my_adjacent_nodes, full_network_topology, args.port)
+    
     read_sock = None
     try:
         read_sock = socket.socket(socket.AF_INET, # Internet
@@ -426,7 +325,6 @@ if __name__ == "__main__":
 
         # If we receive a packet -> unpack the information from the received socket datagram
         if data:
-        #     # TODO may need to change the implementation of the decapsulate based on the requirement
             priority, src_ip, src_port, dst_ip, dst_port, length, packet_type, seq_no, inner_len, inner_data = outer_payload_decapsulate(data)
         #     # Check what is the type of the message received
             source = tuple([src_ip, int(src_port)])
@@ -449,7 +347,7 @@ if __name__ == "__main__":
             # TODO Should check if it is a neighbour or not?
             # TODO Verify from book if anything else is expected here
             elif packet_type == PACKET_TYPE_HELLO:
-                if DEBUG_PRINT == 2:
+                if DEBUG_PRINT == 1:
                     print(f"Received HELLO FROM MY NEIGHBOUR {source[0]}:{source[1]}")
                 # If the neighbour was considered down for some time, update the cost and the next hop for that node
                 if helloTimestamps.get(source, 0) == 0 and source in my_adjacent_nodes:
@@ -478,18 +376,18 @@ if __name__ == "__main__":
                             print(largestSeqNoPerNode)
                         topology_changed = False
                         if inner_len >= 1: # Now we will decrement the TTL of the packet
-                            topology_changed = update_fwd_table(fwd_table, received_lsv, source, my_adjacent_nodes, route_topology)
+                            topology_changed = build_ForwardTable(fwd_table, received_lsv, source, my_adjacent_nodes, route_topology)
                             if topology_changed:
                                 send_link_state_message(my_adjacent_nodes, fwd_table, route_topology, TTL, self_ip, args.port)
                                 #   Call forwardpacket to flood to neighbours
                                 print("topology_changed: The route topo is {}".format(route_topology))
-                                forward_packet(data, my_adjacent_nodes, fwd_table, self_ip, args.port) #TODO
+                                forwardpacket(data, my_adjacent_nodes, fwd_table, self_ip, args.port)
                         print_fwd_table(fwd_table)
                         # print("ROUTE TOPOLOGY NOW IS ::: {}".format(route_topology))
                 else:
                     pass
             elif packet_type in [PACKET_TYPE_ROUTE_TRACE, PACKET_TYPE_ROUTE_TRACE_REPLY]:
-                forward_packet(data, my_adjacent_nodes,fwd_table,self_ip,args.port) #TODO
+                forwardpacket(data, my_adjacent_nodes,fwd_table,self_ip,args.port)
                 pass
             pass
 
@@ -514,12 +412,12 @@ if __name__ == "__main__":
                         deletion_entries.append(fwd_entry)
                         if fwd_entry[DESTINATION] in my_adjacent_nodes:
                             node_state_changed = True
-                            LOG.exception("Removed the entries {} as no HELLO received from them. Updated forwarding table:".format(fwd_entry))
+                            print("Removed the entries {} as no HELLO received from them. Updated forwarding table:".format(fwd_entry))
                             continue
                         else:
                             fwd_entry[NEXT_HOP] = None
                             node_state_changed = True
-                            LOG.exception("Removed the entries {} as no HELLO received from them. Updated forwarding table:".format(fwd_entry))
+                            print("Removed the entries {} as no HELLO received from them. Updated forwarding table:".format(fwd_entry))
                             continue
                 topo_clear = []
                 for dest, path_entries in route_topology.items():

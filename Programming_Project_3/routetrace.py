@@ -17,11 +17,38 @@ def create_header(src_ip_addr, src_port, dest_ip_addr, dest_port, TTL):
 
 
 def print_fwd_table(fwd_table):
-    print(['Hop No ', 'IP', '  Port'])
-    for entry in fwd_table:
-        print(str(entry[0]) + " " + str(entry[1]) + " " + str(entry[2]) , "\n")
-    print("\n\n")
+    # print(['Hop No ', 'IP', '  Port'])
+    # for entry in fwd_table:
+    #     print(str(entry[0]) + " " + str(entry[1]) + " " + str(entry[2]) , "\n")
+    # print("\n\n")
+	
+	print ("{:<12} {:<14} {:<1}".format('Hop #','IP','Port'))
+	print(32*"#")
+	
+	for k, v in fwd_table.items():
+		lang, perc = v
+		print ("{:<9} {:<17} {:<7}".format(k, lang, perc))
+	print("\n")
 
+def debugprint(route_trace, TTL, src_hostname, src_port, dest_port, dest_hostname, s_hostname, s_port, d_hostname, d_port, received_TTL):
+	current_time = time.time()
+	milliseconds = int((current_time - int(current_time)) * 1000)
+	if route_trace:
+		print("\nRoute Packet")
+		print(f"Send Time:          {time.strftime('%Y-%m-%d %H:%M:%S')}.{milliseconds:03d}")
+		print(f"Sender Addr:     {str(ipaddress.ip_address(src_hostname))}:{src_port}")
+		print(f"Destination Addr:     {str(ipaddress.ip_address(dest_hostname))}:{dest_port}")
+		print(f"TTL :             {TTL}")
+		print("\n")
+	
+	else:
+		print("\nReply Packet")
+		print(f"Send Time:          {time.strftime('%Y-%m-%d %H:%M:%S')}.{milliseconds:03d}")
+		print(f"Sender Addr:     {str(ipaddress.ip_address(s_hostname))}:{s_port}")
+		print(f"Destination Addr:     {str(ipaddress.ip_address(d_hostname))}:{d_port}")
+		print(f"TTL :             {received_TTL}")
+		print("\n")
+		
 def main(route_port, src_hostname, src_port, dest_hostname, dest_port, debug):
 	sock = socket.socket(socket.AF_INET, # Internet
 				socket.SOCK_DGRAM) # UDP
@@ -30,17 +57,12 @@ def main(route_port, src_hostname, src_port, dest_hostname, dest_port, debug):
 	inner_payload = inner_payload_encapsulate('T', 0, payload,TTL)
 	packet = outer_payload_encapsulate(socket.gethostbyname(socket.gethostname()),route_port,socket.gethostbyname(dest_hostname),dest_port,inner_payload)
 	sock.sendto(packet, (socket.gethostbyname(src_hostname), src_port))
-	hop_table = []
+	hop_table = {}
 	current_time = time.time()
 	milliseconds = int((current_time - int(current_time)) * 1000)
 	
 	if debug:
-		print("\nRoute Packet")
-		print(f"Send Time:          {time.strftime('%Y-%m-%d %H:%M:%S')}.{milliseconds:03d}")
-		print(f"Sender Addr:     {str(ipaddress.ip_address(src_hostname))}:{src_port}")
-		print(f"Destination Addr:     {str(ipaddress.ip_address(dest_hostname))}:{dest_port}")
-		print(f"TTL :             {TTL}")
-		print("\n")
+		debugprint(1, TTL, src_hostname, src_port, dest_port, dest_hostname, s_hostname, s_port, d_hostname, d_port, received_TTL)
 		
 	sock_receive = socket.socket(socket.AF_INET, # Internet
 			socket.SOCK_DGRAM)
@@ -50,23 +72,15 @@ def main(route_port, src_hostname, src_port, dest_hostname, dest_port, debug):
 		data, addr = sock_receive.recvfrom(1024)
 		priority, s_hostname, s_port, d_hostname, d_port, length, packet_type, received_TTL, inner_length, data = outer_payload_decapsulate(data)
 		
-		current_time = time.time()
-		milliseconds = int((current_time - int(current_time)) * 1000)
-	
 		if debug:
-			print("\nReply Packet")
-			print(f"Send Time:          {time.strftime('%Y-%m-%d %H:%M:%S')}.{milliseconds:03d}")
-			print(f"Sender Addr:     {str(ipaddress.ip_address(s_hostname))}:{s_port}")
-			print(f"Destination Addr:     {str(ipaddress.ip_address(d_hostname))}:{d_port}")
-			print(f"TTL :             {received_TTL}")
-			print("\n")
-		
+			debugprint(0, TTL, src_hostname, src_port, dest_port, dest_hostname, s_hostname, s_port, d_hostname, d_port, received_TTL)
+			
 		if packet_type == 'Y':
 			hop += 1
-			hop_table.append([hop,s_hostname,s_port])
-			print(f"Destintation from the packet is {d_hostname, d_port} \n\n")
+			hop_table[hop] = ([s_hostname,s_port])
+			
 			if ((s_hostname == dest_hostname) and (s_port == dest_port)):
-				print("Received Packet from my required Destination !!!")
+				print("\nReceived Packet from my required Destination !!! \n")
 				break
 			else:
 				TTL += 1
@@ -74,14 +88,9 @@ def main(route_port, src_hostname, src_port, dest_hostname, dest_port, debug):
 				packet = outer_payload_encapsulate(socket.gethostbyname(socket.gethostname()),route_port,socket.gethostbyname(dest_hostname),dest_port,inner_payload)
 				sock.sendto(packet, (src_hostname, src_port))
 				if debug:
-					print("\nRoute Packet")
-					print(f"Send Time:          {time.strftime('%Y-%m-%d %H:%M:%S')}.{milliseconds:03d}")
-					print(f"Sender Addr:     {str(ipaddress.ip_address(src_hostname))}:{src_port}")
-					print(f"Destination Addr:     {str(ipaddress.ip_address(dest_hostname))}:{dest_port}")
-					print(f"TTL :             {TTL}")
-					print("\n")
-		time.sleep(0.5)
-	print(f"The hopping table is :")
+					debugprint(1, TTL, src_hostname, src_port, dest_port, dest_hostname, s_hostname, s_port, d_hostname, d_port, received_TTL)
+					
+	print(f"The hopping table is :\n")
 	print_fwd_table(hop_table)
 		
 		
