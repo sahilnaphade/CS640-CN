@@ -296,8 +296,10 @@ def send_packets(packet_type, requester_addr, requestor_wait_port, sequence_numb
 
 
 def main(sender_wait_port, requestor_port, packet_rate, start_seq_no, payload_length, timeout, emulator_host, emulator_port, priority):
-	self_ip = socket.gethostbyname("127.0.0.1")
-	self_name = "localhost"
+	# self_ip = socket.gethostbyname("127.0.0.1")
+	# self_name = "localhost"
+	self_name = socket.gethostname()
+	self_ip = socket.gethostbyname(self_name)
 	t2 = Thread(target=send_hello_message, args = [self_ip,sender_wait_port,emulator_host,emulator_port],daemon=True)
 	t2.start()
 	print("Waiting to receive request :: ")
