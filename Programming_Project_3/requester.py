@@ -189,8 +189,10 @@ def main(waiting_port, file_to_request, window, emulator_host, emulator_port):
 		# 								 tracker_data,
 		# 								 window, emulator_host, emulator_port])
 		# receiver_thread.start()
-		self_ip = socket.gethostbyname("127.0.0.1")
-		self_name = "localhost"
+		# self_ip = socket.gethostbyname("127.0.0.1")
+		# self_name = "localhost"
+		self_name = socket.gethostname()
+		self_ip = socket.gethostbyname(self_name)
 		t2 = Thread(target=send_hello_message, args = [self_ip,waiting_port,emulator_host,emulator_port],daemon=True)
 		t2.start()
 		print("Thread started....")
