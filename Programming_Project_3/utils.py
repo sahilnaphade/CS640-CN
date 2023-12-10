@@ -94,40 +94,6 @@ def get_next_hop(source, destination, predecessors):
     return current_node
 
 
-def build_forward_table(topology):
-    # Dijkstra's algorithm to build the forwarding table
-    forward_table = {}
-    for node in topology:
-        distances, predecessors = dijkstra(node, topology)
-        for destination, cost in distances.items():
-            if destination != node:
-                nexthop = get_next_hop(node, destination, predecessors)
-                if node not in forward_table:
-                    forward_table[node] = {}
-                forward_table[node][destination] = nexthop
-    return forward_table
-
-def dijkstra(source, graph):
-    # Dijkstra's algorithm to calculate shortest paths
-    distances = {node: float('inf') for node in graph}
-    predecessors = {node: None for node in graph}
-    distances[source] = 0
-
-    unvisited_nodes = set(graph.keys())
-
-    while unvisited_nodes:
-        current_node = min(unvisited_nodes, key=lambda node: distances[node])
-        unvisited_nodes.remove(current_node)
-
-        for neighbor, cost in graph[current_node]:
-            potential_distance = distances[current_node] + cost
-            if potential_distance < distances[neighbor]:
-                distances[neighbor] = potential_distance
-                predecessors[neighbor] = current_node
-
-    return distances, predecessors
-
-
 """
 We will format the link state vector as follows:
     IP_1:Port_1:cost1|IP_2:Port_2:cost2|...
@@ -135,19 +101,20 @@ We will format the link state vector as follows:
     that emulator will be our next hop for this destination
 """
 
-def generate_link_state_vector(fwd_table, route_topology, my_adj_node):
-    encoded_vector = []
-    for entry, path in route_topology.items():
-        path_str = PLACEHOLDER
-        if path:
-            # Do not send the path in which the adjacent node is there, back to that adjacent node
-            if my_adj_node in path:
-                continue
-            path_str = "+".join((each_path_entry[0] + "," + str(each_path_entry[1])) for each_path_entry in path)
-        matched_entry_cost = next(fwd_entry[COST] for fwd_entry in fwd_table if fwd_entry[DESTINATION] == entry)
-        encoded_vector.append(entry[0] + ":" + str(entry[1]) + ":" + str(matched_entry_cost) + ":" + path_str)
-    final_str = "|".join(encoded_vector)
-    # print("FINAL LINK_STATE_STR : {}".format(final_str))
+def generate_link_state_vector(fwd_table, route_topology, my_adjacent_nodes, node):
+    all_link_state = []
+    # For each adjacent node, get the state of the links
+    # If down, we say it is None, otherwise some valid cost
+    for fwd_entry in fwd_table:
+        if fwd_entry[DESTINATION] not in my_adjacent_nodes:
+            continue
+        if fwd_entry[DESTINATION] != node:
+            ent_node = fwd_entry[DESTINATION]
+            cost = fwd_entry[COST]
+            st = str(ent_node[0]) + ":" + str(ent_node[1]) + ":" + ("None" if cost is None else str(cost))
+            all_link_state.append(st)
+    final_str = "|".join(all_link_state)
+    # print("FINAL LINK_STATE_STR SENT to node {} : {}".format(node, final_str))
     return final_str
 
 """The packet_inner_data is already decoded"""
@@ -157,17 +124,20 @@ def decode_link_state_vector(packet_inner_data):
     if len(lsv) == 0:
         return None
     lsv_entries = lsv.split("|")
+    for each_entry in lsv_entries:
+        ip, port, cost = each_entry.split(":")
+        link_state_vector.append([tuple([str(ip), int(port)]), None if cost == "None" else int(cost)])
     # print("LSV entries are {}\n\n".format("\n".join(lsv_entries)))
-    for each_lsv_entry in lsv_entries:
-        dest_ip_addr, dest_port, dest_cost, path_str = each_lsv_entry.split(":")
-        all_ip_port_paths = []
-        # print("PATH STR: {}".format(path_str))
-        if path_str[0] != PLACEHOLDER:
-            ip_port_strs = path_str.split("+")
-            for each_ip_port_str in ip_port_strs:
-                ip_addr, port = each_ip_port_str.split(",")
-                all_ip_port_paths.append(tuple([ip_addr, int(port)]))
-        link_state_vector.append([dest_ip_addr, int(dest_port), int(dest_cost) if dest_cost != "None" else None, all_ip_port_paths])
+    # for each_lsv_entry in lsv_entries:
+    #     dest_ip_addr, dest_port, dest_cost, path_str = each_lsv_entry.split(":")
+    #     all_ip_port_paths = []
+    #     # print("PATH STR: {}".format(path_str))
+    #     if path_str[0] != PLACEHOLDER:
+    #         ip_port_strs = path_str.split("+")
+    #         for each_ip_port_str in ip_port_strs:
+    #             ip_addr, port = each_ip_port_str.split(",")
+    #             all_ip_port_paths.append(tuple([ip_addr, int(port)]))
+        # link_state_vector.append([dest_ip_addr, int(dest_port), int(dest_cost) if dest_cost != "None" else None, all_ip_port_paths])
     return link_state_vector
 
 """
