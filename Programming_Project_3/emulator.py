@@ -492,10 +492,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # 3. Read the topology and get the immediately adjacent nodes of current node
-    self_ip = socket.gethostbyname("127.0.0.1")
-    self_name = "localhost"
-    # self_name = socket.gethostname()
-    # self_ip = socket.gethostbyname(self_name)
+    #self_ip = socket.gethostbyname("127.0.0.1")
+    #self_name = "localhost"
+    self_name = socket.gethostname()
+    self_ip = socket.gethostbyname(self_name)
     my_adjacent_nodes = []
     self_host = tuple([self_ip, int(args.port)])
     full_network_topology = set() # List of all nodes in the current network
