@@ -234,6 +234,7 @@ def readtopology(topology_file, self_ip, self_name, self_host, my_adjacent_nodes
  
         for each_adjacent_topology in topo_file:
             each_adjacent_topology = each_adjacent_topology.rstrip('\n')
+            each_adjacent_topology = each_adjacent_topology.strip()
             if each_adjacent_topology != '\n':
                 # Check if we are reading the adjacent nodes for the current node
                 current_topology = each_adjacent_topology.split(" ")
