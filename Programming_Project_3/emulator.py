@@ -334,10 +334,13 @@ def createroutes(self_name, self_ip, self_port, my_adjacent_nodes, full_network_
                     # If the destination entry exists and the route is valid, fwd the packet to their next hop
                     if each_fwd_entry[DESTINATION] == (dst_ip, int(dst_port)):
                         next_hop_found = True
+                        if each_fwd_entry[NEXT_HOP] is None:
+                            next_hop_found = False
+                            break
                         send_packet(data, each_fwd_entry[NEXT_HOP][0], each_fwd_entry[NEXT_HOP][1])
                         break
                 if not next_hop_found:
-                    print(f"Destination {dst_ip}:{dst_port} not found in fwd table for the packet of type {packet_type} from {source}."
+                    print(f"Destination {dst_ip}:{dst_port} not yet found in fwd table for the packet of type {packet_type} from {source}."
                               " Dropping the packet.")
                     pass
             # Case B: If it is a HELLO packet from neighbour -> update the timestamp of Hello
