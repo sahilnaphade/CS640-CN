@@ -288,10 +288,11 @@ def readtopology(topology_file, self_ip, self_name, self_host, my_adjacent_nodes
     TTL = len(fwd_table)
     print(f"\n\n The Initial Forwarding table is: ")
     print_fwd_table(fwd_table)
-    if DEBUG_PRINT:
-        print("\nThe adjacent nodes for me are: ")
-        for adj_node in my_adjacent_nodes:
-            print(f"{adj_node[0]}:{adj_node[1]}")
+
+    print("\nThe adjacent nodes for me are: ")
+    for adj_node in my_adjacent_nodes:
+        print(f"{adj_node[0]}:{adj_node[1]}")
+
     return route_topology, fwd_table, helloTimestamps, largestSeqNoPerNode, TTL, whole_topo
 
 def createroutes(self_name, self_ip, self_port, my_adjacent_nodes, full_network_topology, route_topology, fwd_table, helloTimestamps, largestSeqNoPerNode, TTL, whole_topo):
