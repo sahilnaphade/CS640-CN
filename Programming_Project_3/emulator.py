@@ -12,7 +12,7 @@ DEBUG_PRINT = False
 # packet_is_being_delayed = False
 NO_MESSAGE_TOLERANCE = 3 # Total count of misses before removing the entry
 HELLO_MESSAGE_DELTA = 300 # in milliseconds (TBD)
-LINK_STATE_MSG_TIMEOUT = 3000
+LINK_STATE_MSG_TIMEOUT = 1000
 
 aNodeWentDown = False
 helloTimestamps = {}
@@ -327,11 +327,11 @@ def createroutes(self_name, self_ip, self_port, my_adjacent_nodes, full_network_
         #     # Check what is the type of the message received
             source = tuple([src_ip, int(src_port)])
             # Case A: It is a Data/End/Request packet -- forward to next hop
-            if packet_type in ['D', 'E', 'R']:
+            if packet_type in ['D', 'E', 'R', 'A']:
                 next_hop_found = False
                 for each_fwd_entry in fwd_table:
                     # If the destination entry exists and the route is valid, fwd the packet to their next hop
-                    if each_fwd_entry[DESTINATION] == tuple(dst_ip, int(dst_port)):
+                    if each_fwd_entry[DESTINATION] == (dst_ip, int(dst_port)):
                         next_hop_found = True
                         send_packet(data, each_fwd_entry[NEXT_HOP][0], each_fwd_entry[NEXT_HOP][1])
                         break
@@ -412,6 +412,7 @@ def createroutes(self_name, self_ip, self_port, my_adjacent_nodes, full_network_
                         forwardpacket(data, my_adjacent_nodes, fwd_table, self_ip, args.port)
                         if topo_updated:
                             print_fwd_table(fwd_table)
+                            print_topology(whole_topo)
                 else:
                     pass
             elif packet_type in [PACKET_TYPE_ROUTE_TRACE, PACKET_TYPE_ROUTE_TRACE_REPLY]:
@@ -496,6 +497,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # 3. Read the topology and get the immediately adjacent nodes of current node
+    #self_ip = socket.gethostbyname("127.0.0.1")
+    #self_name = "localhost"
     self_name = socket.gethostname()
     self_ip = socket.gethostbyname(self_name)
     my_adjacent_nodes = []
