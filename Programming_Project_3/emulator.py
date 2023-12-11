@@ -40,10 +40,10 @@ def print_topology(whole_topo):
             if each[1] == True:
                 table_dict[entry].append(each[0])
 
-    print ("\n {:<25} {:<13}".format('Destination', 'adjacents'))
+    print ("\n {:<27} {:<13}".format('Destination', 'Adjacents'))
     print(63*"#")
     for k, v in table_dict.items():
-        print("{:<25} {}".format(str(k[0]) + ":" + str(k[1]), ", ".join(str(each[0]) + ":" + str(each[1]) for each in v)))
+        print("{:<25} {}".format(str(k[0]) + " : " + str(k[1]), ", ".join(str(each[0]) + " : " + str(each[1]) for each in v)))
     print("\n")
 
 
@@ -60,11 +60,11 @@ def print_fwd_table(fwd_table):
     for i in range(0,len(table)):
         table_dict[i] = table[i]
 
-    print ("\n {:<11} {:<13} {:<13} {:<17} {:<13} ".format('Dest IP','Dest Port','Next Hop IP', 'Next Hop Port', 'Cost'))
+    print ("\n {:<15} {:<11} {:<15} {:<15} {:<5} ".format('Dest IP','Dest Port','Next Hop IP', 'Next Hop Port', 'Cost'))
     print(63*"#")
     for k, v in table_dict.items():
         dest_ip, dest_port, next_hop_ip, next_hop_port, cost = v
-        print ("{:<14} {:<12} {:<16} {:<13} {:<14}".format(str(dest_ip), str(dest_port), str(next_hop_ip), str(next_hop_port), str(cost)))
+        print ("{:<15} {:<11} {:<15} {:<15} {:<5}".format(str(dest_ip), str(dest_port), str(next_hop_ip), str(next_hop_port), str(cost)))
     print("\n")
 
 def send_hello_message(src_ip, src_port, dest_ip, dest_port, send_sock=None):
@@ -350,6 +350,7 @@ def createroutes(self_name, self_ip, self_port, my_adjacent_nodes, full_network_
                             fwd_entry[COST] = 1
                             route_topology[source] = [source]
                             print("Topology changed. Node {} is now reachable. Current FWD table".format(source))
+                            # Update the cached topology for the previously unreachable node
                             for dest, adjacents in whole_topo.items():
                                 for each_node in adjacents:
                                     if each_node[0] == source:
@@ -391,6 +392,8 @@ def createroutes(self_name, self_ip, self_port, my_adjacent_nodes, full_network_
                             if dest_cost_from_the_lsv_node is None:
                                 if dest_ip_port not in unreachable_nodes:
                                     unreachable_nodes.append(dest_ip_port)
+                                    if dest_ip_port in largestSeqNoPerNode:
+                                        del largestSeqNoPerNode[dest_ip_port]
                                     topo_updated = True
                                 for dest, adjacents in whole_topo.items():
                                     for each in adjacents:
@@ -422,12 +425,13 @@ def createroutes(self_name, self_ip, self_port, my_adjacent_nodes, full_network_
                 send_hello_message(self_ip, args.port, adj_node[0], adj_node[1], send_sock=send_sock)
             myLastHello = current_time
 
-        # 4. Check the neighbors and update the fwd table as required
+        # 4. Check the neighbors and update the fwd table and topology as required
         deletion_entries = []
         topology_changed = False
         for neighbour, lastHelloTS in helloTimestamps.items():
             if current_time - lastHelloTS > NO_MESSAGE_TOLERANCE*HELLO_MESSAGE_DELTA:
                 aNodeWentDown = True
+                # Update the cached topology and the forwarding table for the newly unreachable node
                 helloTimestamps[neighbour] = 0
                 if neighbour not in unreachable_nodes:
                     unreachable_nodes.append(neighbour)
@@ -459,6 +463,7 @@ def createroutes(self_name, self_ip, self_port, my_adjacent_nodes, full_network_
                 for each_tuple in topo_clear:
                     route_topology[each_tuple] = []
                 route_topology[neighbour] = []
+        # Since we know that the node is unreachable, update the hello timestamps for that neighbour as well as the largest seq no received till now.
         for each_entry in deletion_entries:
             if each_entry[NEXT_HOP] in helloTimestamps:
                 del helloTimestamps[each_entry[NEXT_HOP]]
@@ -473,7 +478,7 @@ def createroutes(self_name, self_ip, self_port, my_adjacent_nodes, full_network_
             print_fwd_table(fwd_table)
             print_topology(whole_topo)
 
-        # 5. Send the newest LinkStateMessage to all neighbors if time has passed
+        # 5. Send the newest LinkStateMessage to all neighbors if timeout has occurred
         if current_time - myLastLSM > LINK_STATE_MSG_TIMEOUT:
             if DEBUG_PRINT:
                 print("Timeout occured for LSM. Resending the latest LSV")
