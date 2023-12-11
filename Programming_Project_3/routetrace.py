@@ -61,8 +61,8 @@ def main(route_port, src_hostname, src_port, dest_hostname, dest_port, debug):
 	current_time = time.time()
 	milliseconds = int((current_time - int(current_time)) * 1000)
 	
-	if debug:
-		debugprint(1, TTL, src_hostname, src_port, dest_port, dest_hostname, s_hostname, s_port, d_hostname, d_port, received_TTL)
+	# if debug:
+		# debugprint(1, TTL, src_hostname, src_port, dest_port, dest_hostname, s_hostname, s_port, d_hostname, d_port, received_TTL)
 		
 	sock_receive = socket.socket(socket.AF_INET, # Internet
 			socket.SOCK_DGRAM)
@@ -73,9 +73,12 @@ def main(route_port, src_hostname, src_port, dest_hostname, dest_port, debug):
 		priority, s_hostname, s_port, d_hostname, d_port, length, packet_type, received_TTL, inner_length, data = outer_payload_decapsulate(data)
 		
 		if debug:
-			debugprint(0, TTL, src_hostname, src_port, dest_port, dest_hostname, s_hostname, s_port, d_hostname, d_port, received_TTL)
+			debugprint(0, TTL, s_hostname, s_port, dest_port, dest_hostname, s_hostname, s_port, d_hostname, d_port, received_TTL)
 			
 		if packet_type == 'Y':
+			if "UNREACHABLE" in data:
+				print(f"Node {s_hostname}:{s_port} informed that the destination {d_hostname}:{d_port} is currently unreachable from it. Exiting the routetrace...")
+				exit(0)
 			hop += 1
 			hop_table[hop] = ([s_hostname,s_port])
 			
