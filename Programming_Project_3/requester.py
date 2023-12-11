@@ -50,7 +50,7 @@ def send_hello_message(src_ip, src_port, dest_ip, dest_port):
 				send_sock = socket.socket(socket.AF_INET, socket.AF_INET)
 				send_sock.sendto(final_pack, (dest_ip, dest_port))
 				myLastHello = round(time() * 1000)
-				print(f"Sent hello to {dest_ip}:{dest_port} at time {myLastHello}")
+				#print(f"Sent hello to {dest_ip}:{dest_port} at time {myLastHello}")
 			except Exception as ex:
 				raise ex
 			finally:
