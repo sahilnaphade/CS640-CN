@@ -7,9 +7,10 @@ The forwarding table will be generated as follows:
 ]
 ```
 
-The cost -> if `None`, means there is no path to it (yet)
-The next hop IP and Port -> If `None`, means no path exist for that destination.
-For neighbours, we will not remove the next hop entry, but just set the cost to `None`
+The cost -> if `None` for a destination, means there is no path to the destination (yet)  
+* The next hop IP and Port -> If `None`, means no path exist for that destination.
+* For neighbours, we are *NOT* removing the next hop entry, but just setting the cost to `None`
 
-In LSV, if the cost is `None`, that means that particular node is not reachable from the adjacent node. 
-"~" character in LSV means that particular node has no route to destination
+Both the files require the utils.py to be in the same directory as the code file. Kindly include the utils.py for the same.
+
+Extra credits: We have included the sender and requester (with the appropriate changes) for the extra credits.
